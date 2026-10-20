@@ -57,14 +57,13 @@ tone-particles/
 │   └── schemas.py           # 工具的入参 schema
 ├── tools/                   # 仓库工具（不随包分发）
 │   ├── selfcheck.py         # 自检：配置、风格一致性、CLI、单元测试
-│   └── package.py           # 构建 dist/tone-particles-<版本>.zip
+│   └── package.py           # 构建 tone-particles-<版本>.zip
 ├── tests/                   # 单元测试（不随包分发）
 ├── Docs/                    # PRD 与接入指南（不随包分发）
-├── VERSION                  # 版本单一来源（不随包分发）
-└── dist/                    # 打包好的 zip（不随包分发）
+└── VERSION                  # 版本单一来源（不随包分发）
 ```
 
-用户配置 `config/user-config.json` 在首次导入后生成，不随包分发；随机模式还会生成 `config/tone-history.json`，记录最近使用的风格，避免连续重复。`dist/` 下是打包好的 zip。
+用户配置 `config/user-config.json` 在首次导入后生成，不随包分发；随机模式还会生成 `config/tone-history.json`，记录最近使用的风格，避免连续重复。分发 zip 只挂在 Releases 页，不进仓库（由 `tools/package.py` 构建）。
 
 ## 安装
 
@@ -102,7 +101,7 @@ mkdir -p ~/.skills && cp -R tone-particles ~/.skills/
 
 ### 支持 zip 导入的平台
 
-直接上传 `dist/tone-particles-0.2.1.zip`（zip 顶层是 `tone-particles/` 目录，`SKILL.md` 位于该目录内）。不同版本的 Skills 入口位置可能变化，以官方文档为准。
+从 [Releases](https://github.com/orderye/tone-particles/releases) 下载 `tone-particles-0.2.1.zip` 后上传（zip 顶层是 `tone-particles/` 目录，`SKILL.md` 位于该目录内）。不同版本的 Skills 入口位置可能变化，以官方文档为准。
 
 维护者重建分发包用 `python3 tools/package.py`：白名单构建（只含 README、SKILL.md、config、references、scripts、styles）、顶层固定 `tone-particles/`、条目排序与固定时间戳保证同样内容产出字节一致的包；版本号读根目录 `VERSION`，并校验 README 与 `mcp/server.py` 的版本串一致。
 
@@ -171,7 +170,11 @@ python3 mcp/server.py --config /path/to/user-config.json
 | 「老师严厉一点 / 温柔一点」 | 切换 S20 子模式 |
 | 「重新配置」 | 重新进入向导 |
 
+运行时以 `SKILL.md` 的「控制指令」一节为准（那才是模型实际读到的口径），本表是同一套指令的速查。
+
 ## 配置
+
+本节是配置字段的**单一来源**：其它文档只引用不复制，实际归一逻辑见 `scripts/_core.py` 的 `normalize_config`。
 
 ```json
 {
@@ -187,6 +190,7 @@ python3 mcp/server.py --config /path/to/user-config.json
   "switch": {
     "granularity": "per_message",
     "no_repeat_window": 3,
+    "turns": 3,
     "locked": false
   },
   "scene_adapt": true,
@@ -204,6 +208,7 @@ python3 mcp/server.py --config /path/to/user-config.json
 | `density` | `light` / `standard` / `strong` | 密度系数 0.5 / 1 / 1.5 |
 | `switch.granularity` | `per_message` / `per_n_turns` / `on_topic_change` / `per_session` | 切换粒度 |
 | `switch.no_repeat_window` | 0–10 | 最近 K 条不重复；0 表示允许连续重复 |
+| `switch.turns` | 1–20 | `per_n_turns` 时每几条切一次，默认 3 |
 | `switch.locked` | 布尔 | 锁定当前风格 |
 | `kaomoji.enabled` / `level` | 布尔 / `light` / `normal` | 颜文字开关与档位 |
 | `paused` | 布尔 | 暂停语气层 |
