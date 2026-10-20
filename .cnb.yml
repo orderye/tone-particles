@@ -1,6 +1,10 @@
 main:
   push:
-    - stages:
+    # 缺省镜像 cnbcool/default-build-env（Debian 13）不含 python3，
+    # 不显式指定镜像时所有 stage 都会以 127 退出。
+    - docker:
+        image: python:3.12-slim
+      stages:
         - name: setup
           script: python3 --version
         - name: 风格与配置完整性
