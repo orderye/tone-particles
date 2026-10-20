@@ -22,7 +22,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from host_adapter import ToneHost  # noqa: E402
-from tone_core import load_catalog  # noqa: E402
+from tone_core import catalog_entries, load_catalog  # noqa: E402
 
 
 def handle(host: ToneHost, request: dict) -> dict:
@@ -49,17 +49,7 @@ def handle(host: ToneHost, request: dict) -> dict:
         data, index = load_catalog()
         return {
             "groups": data.get("groups", []),
-            "styles": [
-                {
-                    "id": meta["id"],
-                    "name": meta["name"],
-                    "group": meta["group"],
-                    "one_liner": meta["one_liner"],
-                    "density": meta["density"],
-                    "kaomoji": meta.get("kaomoji"),
-                }
-                for meta in index.values()
-            ],
+            "styles": catalog_entries(data, index),
         }
     raise SystemExit(f"未知操作：{op!r}。可用：begin_session / next_turn / observe / "
                      "set_config / get_state / catalog")

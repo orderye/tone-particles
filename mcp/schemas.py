@@ -1,10 +1,22 @@
 """MCP 工具的入参 schema。
 
 用 JSON Schema 描述，客户端据此渲染调用表单。schema 同时是运行时校验的依据：
-server.py 会按这里声明的必填项与类型做基本检查。
+server.py 会按这里声明的必填项做检查，工具实现（tools.py）负责取值校验。
+
+枚举一律从 scripts/_core.py 取，避免和核心的常量各写一份而漂移。
 """
 
 from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+SKILL_ROOT = Path(__file__).resolve().parent.parent
+SCRIPTS_DIR = SKILL_ROOT / "scripts"
+if str(SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_DIR))
+
+import _core  # noqa: E402
 
 STYLE_ID = {"type": "string", "description": "风格 id，如 S09。共 21 个。"}
 STYLE_ID_LIST = {
@@ -46,7 +58,7 @@ GET_STYLE_PROMPT = {
         },
         "density": {
             "type": "string",
-            "enum": ["light", "standard", "strong"],
+            "enum": sorted(_core.DENSITY_FACTOR),
             "description": "密度档位，默认 standard。",
         },
         "variant": {
@@ -64,7 +76,7 @@ SET_USER_STYLE = {
     "properties": {
         "mode": {
             "type": "string",
-            "enum": ["single", "blend", "rotate", "blend_random"],
+            "enum": sorted(_core.MODES),
             "description": "运行模式。",
         },
         "styles": {
@@ -83,14 +95,14 @@ SET_USER_STYLE = {
         },
         "density": {
             "type": "string",
-            "enum": ["light", "standard", "strong"],
+            "enum": sorted(_core.DENSITY_FACTOR),
         },
         "switch": {
             "type": "object",
             "properties": {
                 "granularity": {
                     "type": "string",
-                    "enum": ["per_message", "per_n_turns", "on_topic_change", "per_session"],
+                    "enum": sorted(_core.GRANULARITIES),
                 },
                 "no_repeat_window": {"type": "integer", "minimum": 0, "maximum": 10},
                 "locked": {"type": "boolean"},
@@ -102,7 +114,7 @@ SET_USER_STYLE = {
             "type": "object",
             "properties": {
                 "enabled": {"type": "boolean"},
-                "level": {"type": "string", "enum": ["light", "normal"]},
+                "level": {"type": "string", "enum": sorted(_core.KAOMOJI_LEVELS)},
             },
             "additionalProperties": False,
         },

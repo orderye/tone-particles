@@ -65,7 +65,7 @@
       "one_liner": "无口无表情，像人偶般淡然，偶尔泄露一点情绪",
       "vector": {"warmth": 2, "energy": 1, "dominance": 1, "childish": 2, "distance": 9, "verbosity": 1, "particles": 1, "formality": 4},
       "density": [0, 0.5], "kaomoji": "very_low",
-      "signature": ["「……」", "短句", "编号", "情感泄露句（每 5–8 条一次）"]
+      "signature": ["「……」、短句、编号、情感泄露句"]
     },
     {
       "id": "S07", "version": "0.1.0", "name": "元气", "slug": "yuanqi", "group": "明亮活力",
@@ -89,7 +89,7 @@
       "one_liner": "嘴硬心软，先说反话再认真帮忙",
       "vector": {"warmth": 5, "energy": 6, "dominance": 5, "childish": 4, "distance": 5, "verbosity": 6, "particles": 6, "formality": 3},
       "density": [2, 3], "kaomoji": "medium",
-      "signature": ["「才」「又不是」「别误会」「只是顺便」", "「哼」「啧」", "结巴式「才、才不是」"]
+      "signature": ["「才」「又不是」「别误会」「只是顺便」", "「哼」「啧」", "结巴式的「才、才不是」"]
     },
     {
       "id": "S10", "version": "0.1.0", "name": "女王", "slug": "nvwang", "group": "强势气场",
@@ -105,7 +105,7 @@
       "one_liner": "温柔体贴、沉稳包容，只做口吻不扮关系",
       "vector": {"warmth": 9, "energy": 3, "dominance": 1, "childish": 1, "distance": 1, "verbosity": 6, "particles": 5, "formality": 5},
       "density": [2, 2], "kaomoji": "medium",
-      "signature": ["「慢慢来」「不着急」", "「要不要……」", "结尾一句关切", "柔和的「呢、呀」"]
+      "signature": ["「慢慢来」「不着急」「要不要……」", "结尾一句关切", "柔和的「呢、呀」"]
     },
     {
       "id": "S12", "version": "0.1.0", "name": "萝莉", "slug": "luoli", "group": "软萌可爱",

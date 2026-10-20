@@ -14,32 +14,37 @@
 
 from __future__ import annotations
 
-import json
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from tone_core import (  # noqa: E402
-    SKILL_ROOT,
     advance_turn,
+    apply_config_patch,
     check_density,
     compose,
     load_catalog,
+    load_config,
     load_json,
+    members_with_weights,
     migrate_config,
     normalize_config,
     save_config,
+    save_history,
+    set_resource_root,
+    skill_root,
 )
-
-DEFAULTS_PATH = SKILL_ROOT / "config" / "defaults.json"
 
 
 class ToneHost:
     """一个用户（或一份会话）的语气状态机。"""
 
     def __init__(self, config_path=None, history_path=None, root=None, seed=None):
-        self.root = Path(root) if root else SKILL_ROOT
+        if root:
+            # root 的语义是「skill 根目录」：styles / particles / defaults 都从那里取
+            set_resource_root(root)
+        self.root = skill_root()
         self.config_path = Path(config_path) if config_path else (
             self.root / "config" / "user-config.json")
         self.history_path = Path(history_path) if history_path else (
@@ -62,13 +67,8 @@ class ToneHost:
         return not self.config_path.exists()
 
     def load_config(self) -> dict:
-        if self.config_path.exists():
-            raw = load_json(self.config_path, label="配置文件")
-        elif DEFAULTS_PATH.exists():
-            raw = load_json(DEFAULTS_PATH, label="配置文件")
-        else:
-            raise SystemExit("找不到 config/defaults.json，无法给出默认配置。")
-        return normalize_config(migrate_config(raw))
+        """读取用户配置；不存在时回退到 defaults.json。"""
+        return load_config(self.config_path)
 
     def save_config(self, cfg: dict) -> None:
         save_config(self.config_path, cfg)
@@ -110,15 +110,12 @@ class ToneHost:
                 "notes": decision["notes"],
             }
 
-        weights_map = {item["id"]: item["weight"] for item in cfg["styles"]}
-        members = [(decision["main"], weights_map.get(decision["main"], 1))]
-        for sid in decision["accents"]:
-            members.append((sid, weights_map.get(sid, 1)))
+        members = members_with_weights(cfg, [decision["main"]] + decision["accents"])
 
         level = density or cfg.get("density", "standard")
-        payload = compose(members, None, level, cfg.get("variants"))
+        payload = compose(members, [weight for _, weight in members], level, cfg.get("variants"))
 
-        self._save_history(decision["state"]["history"])
+        save_history(self.history_path, decision["state"]["history"])
         return {
             "active": True,
             "system_suffix": payload["prompt"],
@@ -158,15 +155,9 @@ class ToneHost:
         }
 
     def update_config(self, patch: dict) -> dict:
-        """应用控制指令对应的配置变更并写回。"""
+        """应用控制指令对应的配置变更并写回。未知键报错；None 表示不改动。"""
         cfg = self.load_config()
-        for key, value in (patch or {}).items():
-            if key == "switch" and isinstance(value, dict):
-                cfg.setdefault("switch", {}).update(value)
-            elif key == "kaomoji" and isinstance(value, dict):
-                cfg.setdefault("kaomoji", {}).update(value)
-            else:
-                cfg[key] = value
+        apply_config_patch(cfg, patch)
         cfg = normalize_config(migrate_config(cfg))
         self.save_config(cfg)
         return cfg
@@ -179,15 +170,3 @@ class ToneHost:
             "config_path": str(self.config_path),
             "onboarding_required": self.onboarding_required,
         }
-
-    # -- 内部 -----------------------------------------------------------
-
-    def _save_history(self, history) -> None:
-        try:
-            self.history_path.parent.mkdir(parents=True, exist_ok=True)
-            tmp = self.history_path.with_name(self.history_path.name + ".tmp")
-            tmp.write_text(json.dumps(history[-50:], ensure_ascii=False), encoding="utf-8")
-            tmp.replace(self.history_path)
-        except OSError:
-            # 历史写不进去不该让整轮对话失败
-            pass

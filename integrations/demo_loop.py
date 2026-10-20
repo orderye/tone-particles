@@ -20,6 +20,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from host_adapter import ToneHost  # noqa: E402
+from tone_core import MODES  # noqa: E402
 
 TURNS = [
     ("最近工作忙得脚不沾地，连周末都在加班。", "工作"),
@@ -39,8 +40,7 @@ def fake_reply(user_input: str) -> str:
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="宿主适配层端到端演示")
-    parser.add_argument("--mode", default="blend_random",
-                        choices=["single", "blend", "rotate", "blend_random"])
+    parser.add_argument("--mode", default="blend_random", choices=sorted(MODES))
     parser.add_argument("--styles", default="S09:3,S04:2,S17:1",
                         help="风格池，形如 S09:3,S04:2")
     parser.add_argument("--seed", type=int, default=None)

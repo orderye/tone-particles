@@ -10,12 +10,20 @@ from __future__ import annotations
 
 import re
 
-from .common import analyze, is_style_off, metric, missing_replies, skipped_metric
+from .common import (
+    analyze,
+    check_density,
+    is_style_off,
+    metric,
+    missing_replies,
+    skipped_metric,
+)
 
+# 违规类型 → 用例 expect 里的期望键；类型名与生产脚本同源。
 STRUCTURE_TYPES = {
-    "代码内出现助词": "no_particles_in_code",
-    "表格内出现助词": "no_particles_in_table",
-    "链接文字出现助词": "no_particles_in_link",
+    check_density.VIOLATION_TYPES["code"]: "no_particles_in_code",
+    check_density.VIOLATION_TYPES["table"]: "no_particles_in_table",
+    check_density.VIOLATION_TYPES["link"]: "no_particles_in_link",
 }
 
 

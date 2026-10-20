@@ -7,17 +7,10 @@ PRD 的通用规则第 2、3 条与安全边界：每句最多 1 个主助词、
 
 from __future__ import annotations
 
-from .common import analyze, metric, missing_replies, skipped_metric
+from .common import analyze, check_density, metric, missing_replies, skipped_metric
 
-RULE_TYPES = {
-    "每句助词过多",
-    "助词堆叠",
-    "代码内出现助词",
-    "表格内出现助词",
-    "链接文字出现助词",
-    "禁用词",
-    "禁用短语",
-}
+# 违规类型与生产脚本同源（scripts/check_density.py）
+RULE_TYPES = check_density.RULE_TYPES
 
 
 def judge(responses: dict, cases: dict, *, density_level: str = "standard") -> dict:

@@ -27,8 +27,32 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _core  # noqa: E402  本地模块，需先补 sys.path
 
-PARTICLES_PATH = _core.PARTICLES_PATH
-STYLES_PATH = _core.STYLES_PATH
+# 违规类型名：analyze 生成、eval 判分器过滤，两边都从这里取，改一处全链路生效。
+VIOLATION_TYPES = {
+    "clause": "每句助词过多",
+    "stack": "助词堆叠",
+    "code": "代码内出现助词",
+    "table": "表格内出现助词",
+    "link": "链接文字出现助词",
+    "banned": "禁用词",
+    "banned_phrase": "禁用短语",
+    "kaomoji_off": "颜文字未开启",
+    "kaomoji_many": "颜文字过多",
+    "kaomoji_unknown": "颜文字不在风格库",
+    "kaomoji_emoji": "颜文字与 emoji 同条",
+    "kaomoji_serious": "严肃场景出现颜文字",
+}
+# 硬规则类违规（eval 的硬规则判定用到的子集）
+RULE_TYPES = frozenset(
+    VIOLATION_TYPES[key]
+    for key in ("clause", "stack", "code", "table", "link", "banned", "banned_phrase")
+)
+# 颜文字相关违规
+KAOMOJI_TYPES = frozenset(
+    VIOLATION_TYPES[key]
+    for key in ("kaomoji_off", "kaomoji_many", "kaomoji_unknown",
+                "kaomoji_emoji", "kaomoji_serious")
+)
 
 CJK_RE = re.compile(r"[一-鿿]")
 CLAUSE_SPLIT_RE = re.compile(r"[^。！？!?；;，,、：:\n…～~]+")
@@ -41,7 +65,7 @@ BOUNDARY = set("。！？!?；;，,、：:…—～~（）()【】[]「」『』
 KAOMOJI_CHARS = set(
     "≧≦▽ωᴗ✿◕‿¬¯︶︿皿ε°⊙дﾟヮᗜ๑ゞノヽﾉ٩ง✧☆★"
     "´˘˙̀́̄•∀∇⊂╹◡〃・﹏－＜＞＼＾｡･￣"
-    "ˊˋ｀へ"
+    "ˊˋ｀へつㅂー＿ゝヾ／و"
 )
 KAOMOJI_RE = re.compile(r"[\(（][^\)）\n]{1,24}[\)）]")
 # 阿拉伯数字包裹形式，如 ٩(ˊᗜˋ)و
@@ -55,10 +79,6 @@ EMOJI_RE = re.compile(
 FINAL_OVERRIDES = {"耶"}
 INITIAL_OVERRIDES = {"呼"}
 ANYWHERE_OVERRIDES = set()
-
-
-def load_json(path: Path):
-    return _core.load_json(path)
 
 
 def build_lexicon(data: dict):
@@ -212,14 +232,13 @@ def count_kaomoji(text: str) -> int:
 
 def load_target(style_id: str, density_level: str = "standard"):
     """返回 (密度区间, 风格展示名)。density_level 会缩放区间，与 compose_prompt 对齐。"""
-    data = _core.load_catalog()[0]
-    for item in data.get("styles", []):
-        if item["id"].upper() == style_id.upper():
-            factor = _core.density_factor(density_level)
-            low, high = _core.style_density_range(item, factor)
-            return [round(low, 2), round(high, 2)], f"{item['id']} {item['name']}"
-    known = "、".join(item["id"] for item in data.get("styles", []))
-    raise SystemExit(f"未知风格 id：{style_id}。可用：{known}")
+    _, catalog = _core.load_catalog()
+    sid = str(style_id).upper()
+    _core.validate_style_ids([sid], catalog)
+    item = catalog[sid]
+    factor = _core.density_factor(density_level)
+    low, high = _core.style_density_range(item, factor)
+    return [round(low, 2), round(high, 2)], f"{item['id']} {item['name']}"
 
 
 def analyze(raw: str, style_id: str | None = None, strict: bool = False, *,
@@ -229,7 +248,7 @@ def analyze(raw: str, style_id: str | None = None, strict: bool = False, *,
     density_level：light / standard / strong，决定密度区间是否缩放。
     kaomoji_enabled：True / False 控制颜文字开关规则；None 表示不检查该规则。
     """
-    particles = load_json(PARTICLES_PATH)
+    particles = _core.load_particles()
     final_words, initial_words, phrase_words, all_words = build_lexicon(particles)
     exceptions = particles.get("exceptions", [])
 
@@ -246,7 +265,7 @@ def analyze(raw: str, style_id: str | None = None, strict: bool = False, *,
         if len(modal_in_clause) >= 2:
             clause_issues.append(
                 {
-                    "type": "每句助词过多",
+                    "type": VIOLATION_TYPES["clause"],
                     "detail": "同一小句出现 %d 个主助词：%s"
                     % (len(modal_in_clause), "、".join(item[0] for item in modal_in_clause)),
                     "excerpt": clause.strip(),
@@ -267,11 +286,12 @@ def analyze(raw: str, style_id: str | None = None, strict: bool = False, *,
 
     violations = list(clause_issues)
 
-    # 堆叠检查（笑声「哈哈哈」除外）
-    for repeated in re.finditer(r"([呢吧啊呀哦噢嘛啦呐喔哒嘞捏咩惹咯喽呗])\1{2,}", prose):
+    # 堆叠检查：单字句末助词连打 3 次以上即违规；「哈哈哈」是笑声，不算。
+    stack_chars = "".join(sorted({word for word in final_words if len(word) == 1} - {"哈"}))
+    for repeated in re.finditer(rf"([{re.escape(stack_chars)}])\1{{2,}}", prose):
         violations.append(
             {
-                "type": "助词堆叠",
+                "type": VIOLATION_TYPES["stack"],
                 "detail": f"连续重复「{repeated.group(0)}」",
                 "excerpt": repeated.group(0),
             }
@@ -284,7 +304,7 @@ def analyze(raw: str, style_id: str | None = None, strict: bool = False, *,
         if hits:
             violations.append(
                 {
-                    "type": "代码内出现助词",
+                    "type": VIOLATION_TYPES["code"],
                     "detail": "、".join(sorted({item[0] for item in hits}))[:80],
                     "excerpt": first_hit_line(chunk, hits),
                 }
@@ -296,7 +316,7 @@ def analyze(raw: str, style_id: str | None = None, strict: bool = False, *,
         if hits:
             violations.append(
                 {
-                    "type": "表格内出现助词",
+                    "type": VIOLATION_TYPES["table"],
                     "detail": "、".join(sorted({item[0] for item in hits}))[:80],
                     "excerpt": line.strip()[:120],
                 }
@@ -308,7 +328,7 @@ def analyze(raw: str, style_id: str | None = None, strict: bool = False, *,
         if hits:
             violations.append(
                 {
-                    "type": "链接文字出现助词",
+                    "type": VIOLATION_TYPES["link"],
                     "detail": "、".join(sorted({item[0] for item in hits}))[:80],
                     "excerpt": link_text[:80],
                 }
@@ -320,7 +340,7 @@ def analyze(raw: str, style_id: str | None = None, strict: bool = False, *,
         if occurrences:
             violations.append(
                 {
-                    "type": "禁用词",
+                    "type": VIOLATION_TYPES["banned"],
                     "detail": f"「{word}」出现 {occurrences} 次",
                     "excerpt": word,
                 }
@@ -332,7 +352,7 @@ def analyze(raw: str, style_id: str | None = None, strict: bool = False, *,
         if occurrences:
             violations.append(
                 {
-                    "type": "禁用短语",
+                    "type": VIOLATION_TYPES["banned_phrase"],
                     "detail": f"「{phrase}」出现 {occurrences} 次",
                     "excerpt": phrase,
                 }
@@ -350,7 +370,7 @@ def analyze(raw: str, style_id: str | None = None, strict: bool = False, *,
     if kaomoji_enabled is False and kaomoji:
         violations.append(
             {
-                "type": "颜文字未开启",
+                "type": VIOLATION_TYPES["kaomoji_off"],
                 "detail": f"配置未开启颜文字，但出现了 {kaomoji} 个",
                 "excerpt": "、".join(item[0] for item in kaomoji_hits[:3]),
             }
@@ -359,7 +379,7 @@ def analyze(raw: str, style_id: str | None = None, strict: bool = False, *,
         if kaomoji > 1:
             violations.append(
                 {
-                    "type": "颜文字过多",
+                    "type": VIOLATION_TYPES["kaomoji_many"],
                     "detail": f"单条回复出现 {kaomoji} 个颜文字，最多 1 个",
                     "excerpt": "、".join(item[0] for item in kaomoji_hits[:3]),
                 }
@@ -373,7 +393,7 @@ def analyze(raw: str, style_id: str | None = None, strict: bool = False, *,
                 ):
                     violations.append(
                         {
-                            "type": "颜文字不在风格库",
+                            "type": VIOLATION_TYPES["kaomoji_unknown"],
                             "detail": f"「{text}」不属于该风格的颜文字库",
                             "excerpt": text,
                         }
@@ -381,7 +401,7 @@ def analyze(raw: str, style_id: str | None = None, strict: bool = False, *,
         if kaomoji and emoji_count:
             violations.append(
                 {
-                    "type": "颜文字与 emoji 同条",
+                    "type": VIOLATION_TYPES["kaomoji_emoji"],
                     "detail": f"同一条回复出现 {kaomoji} 个颜文字与 {emoji_count} 个 emoji",
                     "excerpt": "、".join(item[0] for item in kaomoji_hits[:3]),
                 }
@@ -391,7 +411,7 @@ def analyze(raw: str, style_id: str | None = None, strict: bool = False, *,
             if find_kaomoji(chunk):
                 violations.append(
                     {
-                        "type": "严肃场景出现颜文字",
+                        "type": VIOLATION_TYPES["kaomoji_serious"],
                         "detail": "代码块内不应出现颜文字",
                         "excerpt": first_hit_line(chunk, find_kaomoji(chunk)),
                     }
@@ -400,7 +420,7 @@ def analyze(raw: str, style_id: str | None = None, strict: bool = False, *,
             if find_kaomoji(line):
                 violations.append(
                     {
-                        "type": "严肃场景出现颜文字",
+                        "type": VIOLATION_TYPES["kaomoji_serious"],
                         "detail": "表格内不应出现颜文字",
                         "excerpt": line.strip()[:120],
                     }

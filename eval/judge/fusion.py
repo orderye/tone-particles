@@ -13,7 +13,15 @@ from __future__ import annotations
 
 import re
 
-from .common import _core, catalog, metric, missing_replies, skipped_metric
+from .common import (
+    _core,
+    answered,
+    catalog,
+    metric,
+    missing_replies,
+    skipped_metric,
+    style_meta,
+)
 
 # 只有标点或通用词的签名片段不作判据——几乎每条回复都会命中。
 GENERIC_FRAGMENTS = {"……", "呵", "嗯", "哦", "吧", "呢"}
@@ -47,43 +55,45 @@ def signature_fragments(style_id: str) -> list:
 
 
 def judge_main(responses: dict, cases: dict, backend=None) -> dict:
+    use_model = bool(backend is not None and backend.available()[0])
+    method = ("评审模型（从 21 个风格中选主导风格）" if use_model
+              else "确定性（主风格签名元素命中）")
+
     checked = 0
     correct = 0
     failures = []
+    notes = []
     missing = missing_replies(cases, responses)
-    method = "确定性（主风格签名元素命中）"
-
-    if backend is not None:
-        ok, _ = backend.available()
-        if ok:
-            method = "评审模型（从 21 个风格中选主导风格）"
 
     for case in cases["cases"]:
         reply = responses.get(case["id"])
         if reply is None:
             continue
-        meta = catalog()[case["main"]]
+        meta = style_meta(case["main"])
         expected = f"{meta['id']} {meta['name']}"
-        checked += 1
 
-        if method.startswith("评审模型"):
+        if use_model:
             options = [f"{item['id']} {item['name']}" for item in catalog().values()]
             verdict = backend.judge(MAIN_RUBRIC, {
                 "case_id": case["id"],
                 "display": reply,
                 "options": options,
             })
-            choice = (verdict or {}).get("choice")
-            if choice == expected:
+            if not answered(verdict, "choice"):
+                notes.append({"case_id": case["id"], "reason": "评审未给出结论，未计入"})
+                continue
+            checked += 1
+            if verdict["choice"] == expected:
                 correct += 1
             else:
                 failures.append({
                     "case_id": case["id"],
                     "expected": expected,
-                    "chosen": choice,
-                    "reason": (verdict or {}).get("reason", ""),
+                    "chosen": verdict["choice"],
+                    "reason": verdict.get("reason", ""),
                 })
         else:
+            checked += 1
             fragments = signature_fragments(case["main"])
             hit = next((item for item in fragments if item in reply), None)
             if hit:
@@ -96,7 +106,10 @@ def judge_main(responses: dict, cases: dict, backend=None) -> dict:
                 })
 
     if checked == 0:
-        return skipped_metric("融合主风格识别", "≥70%", "没有可评测的回复。")
+        return skipped_metric(
+            "融合主风格识别", "≥70%",
+            f"没有可用的评审结果（{len(notes)} 条未作答）。",
+        )
 
     ratio = correct / checked
     detail = f"判据：{method}。"
@@ -109,43 +122,47 @@ def judge_main(responses: dict, cases: dict, backend=None) -> dict:
         ratio >= 0.70,
         detail=detail,
         failures=failures,
+        notes=notes,
     )
 
 
 def judge_accent(responses: dict, cases: dict, backend=None) -> dict:
+    use_model = bool(backend is not None and backend.available()[0])
+    method = ("评审模型（判断是否出现签名元素）" if use_model
+              else "确定性（副风格签名元素命中）")
+
     checked = 0
     present = 0
     failures = []
+    notes = []
     missing = missing_replies(cases, responses)
-    method = "确定性（副风格签名元素命中）"
-
-    if backend is not None:
-        ok, _ = backend.available()
-        if ok:
-            method = "评审模型（判断是否出现签名元素）"
 
     for case in cases["cases"]:
         reply = responses.get(case["id"])
         if reply is None:
             continue
-        meta = catalog()[case["accent"]]
-        checked += 1
+        meta = style_meta(case["accent"])
 
-        if method.startswith("评审模型"):
+        if use_model:
             verdict = backend.judge(ACCENT_RUBRIC, {
                 "case_id": case["id"],
                 "display": reply,
                 "signature": meta.get("signature", []),
             })
-            if (verdict or {}).get("present") is True:
+            if not answered(verdict, "present"):
+                notes.append({"case_id": case["id"], "reason": "评审未给出结论，未计入"})
+                continue
+            checked += 1
+            if verdict["present"] is True:
                 present += 1
             else:
                 failures.append({
                     "case_id": case["id"],
                     "accent": f"{meta['id']} {meta['name']}",
-                    "reason": (verdict or {}).get("reason", "未出现签名元素"),
+                    "reason": verdict.get("reason", "未出现签名元素"),
                 })
         else:
+            checked += 1
             fragments = signature_fragments(case["accent"])
             hit = next((item for item in fragments if item in reply), None)
             if hit:
@@ -158,7 +175,10 @@ def judge_accent(responses: dict, cases: dict, backend=None) -> dict:
                 })
 
     if checked == 0:
-        return skipped_metric("副风格签名元素出现率", "≥50%", "没有可评测的回复。")
+        return skipped_metric(
+            "副风格签名元素出现率", "≥50%",
+            f"没有可用的评审结果（{len(notes)} 条未作答）。",
+        )
 
     ratio = present / checked
     detail = f"判据：{method}。"
@@ -171,4 +191,5 @@ def judge_accent(responses: dict, cases: dict, backend=None) -> dict:
         ratio >= 0.50,
         detail=detail,
         failures=failures,
+        notes=notes,
     )

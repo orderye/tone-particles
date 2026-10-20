@@ -10,14 +10,11 @@
 from __future__ import annotations
 
 import json
+import os
 import random
 import re
+import sys
 from pathlib import Path
-
-SKILL_ROOT = Path(__file__).resolve().parent.parent
-DEFAULTS_PATH = SKILL_ROOT / "config" / "defaults.json"
-STYLES_PATH = SKILL_ROOT / "config" / "styles.json"
-PARTICLES_PATH = SKILL_ROOT / "config" / "particles.json"
 
 MODES = {"single", "blend", "rotate", "blend_random"}
 GRANULARITIES = {"per_message", "per_n_turns", "on_topic_change", "per_session"}
@@ -25,6 +22,67 @@ DENSITY_FACTOR = {"light": 0.5, "standard": 1.0, "strong": 1.5}
 DENSITY_LABEL = {"light": "轻", "standard": "标准", "strong": "浓"}
 KAOMOJI_LEVELS = {"light", "normal"}
 DEFAULT_CONFIG_VERSION = 1
+# set_user_style / update_config 允许改写的配置键；其余一律报错，防止拼错静默落盘。
+CONFIG_KEYS = {
+    "mode", "styles", "density", "switch", "kaomoji",
+    "paused", "variants", "emoji", "scene_adapt",
+}
+
+
+# --------------------------------------------------------------------------
+# 资源根
+# --------------------------------------------------------------------------
+
+# styles / particles / defaults 这些随代码分发的资源所在目录。默认取本文件所在
+# skill 树；把 skill 部署到别处时可以用 TONE_PARTICLES_ROOT 环境变量或
+# set_resource_root() 重设。它是进程内全局：多用户隔离靠各自的 config /
+# history 路径（config_path / history_path），不靠这里。
+_DEFAULT_ROOT = Path(__file__).resolve().parent.parent
+_resource_root = None
+_resource_cache: dict = {}
+
+
+def skill_root() -> Path:
+    """当前生效的资源根。"""
+    if _resource_root is not None:
+        return _resource_root
+    env = os.environ.get("TONE_PARTICLES_ROOT")
+    return Path(env).expanduser() if env else _DEFAULT_ROOT
+
+
+def set_resource_root(root=None) -> Path:
+    """重设资源根（进程内全局）；传 None 恢复默认。返回生效后的根。"""
+    global _resource_root
+    _resource_root = Path(root).expanduser().resolve() if root else None
+    _resource_cache.clear()
+    return skill_root()
+
+
+def defaults_path() -> Path:
+    return skill_root() / "config" / "defaults.json"
+
+
+def styles_path() -> Path:
+    return skill_root() / "config" / "styles.json"
+
+
+def particles_path() -> Path:
+    return skill_root() / "config" / "particles.json"
+
+
+def __getattr__(name):
+    """兼容 `_core.SKILL_ROOT` / `_core.DEFAULTS_PATH` 这类旧写法：按当前资源根动态取值。"""
+    if name == "SKILL_ROOT":
+        return skill_root()
+    accessors = {
+        "DEFAULTS_PATH": defaults_path,
+        "STYLES_PATH": styles_path,
+        "PARTICLES_PATH": particles_path,
+    }
+    if name in accessors:
+        return accessors[name]()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 # 颜文字频率预算（次/条）：倾向分四级，见 references/lexicon.md 与 PRD 4.6 第 6 条。
 # 高 = 适中档每条 ≤ 1 个；中 = 约每 2 条 1 个；低 = 约每 3–4 条 1 个；极低 = 约每 6 条 1 个。
@@ -68,14 +126,54 @@ def load_json(path: Path, label=None, fallback=None):
         raise SystemExit(f"不是合法 JSON：{path}（{exc}）")
 
 
+def _cached_json(path: Path):
+    """按 mtime 缓存随包资源（styles / particles）。
+
+    eval 逐条判分会反复读取同一份文件，缓存把 O(回复数 × 解析) 降为 O(1)。
+    """
+    key = str(path)
+    try:
+        mtime = path.stat().st_mtime_ns
+    except OSError:
+        mtime = None
+    hit = _resource_cache.get(key)
+    if hit is not None and hit[0] == mtime:
+        return hit[1]
+    data = load_json(path)
+    _resource_cache[key] = (mtime, data)
+    return data
+
+
 def load_catalog():
     """返回 (styles.json 全文, {风格 id: 条目})。文件缺失时报错，不静默返回空。"""
-    data = load_json(STYLES_PATH)
+    data = _cached_json(styles_path())
     return data, {item["id"]: item for item in data.get("styles", [])}
 
 
 def load_particles():
-    return load_json(PARTICLES_PATH)
+    return _cached_json(particles_path())
+
+
+def catalog_entries(data: dict, index: dict, group=None, include_prompt: bool = False) -> list:
+    """统一的风格目录条目形状：CLI --catalog、MCP list_styles、宿主 catalog 共用。"""
+    items = []
+    for meta in index.values():
+        if group and meta.get("group") != group:
+            continue
+        entry = {
+            "id": meta["id"],
+            "name": meta["name"],
+            "group": meta.get("group"),
+            "one_liner": meta.get("one_liner"),
+            "vector": meta.get("vector"),
+            "density": meta.get("density"),
+            "kaomoji": meta.get("kaomoji"),
+            "signature": meta.get("signature", []),
+        }
+        if include_prompt:
+            entry["prompt"] = style_text(meta)
+        items.append(entry)
+    return items
 
 
 def dimension_order(catalog_data: dict) -> list:
@@ -137,7 +235,7 @@ def conflict_note(main_id: str, accent_id: str, catalog_data: dict) -> bool:
 
 
 def style_text(meta: dict) -> str:
-    path = SKILL_ROOT / meta["file"]
+    path = skill_root() / meta["file"]
     try:
         return path.read_text(encoding="utf-8")
     except FileNotFoundError:
@@ -245,7 +343,16 @@ def normalize_config(cfg: dict) -> dict:
     cfg["switch"].setdefault("turns", 3)
     cfg.setdefault("paused", False)
     cfg.setdefault("variants", {})
-    cfg.setdefault("kaomoji", {"enabled": False, "level": "light"})
+    kaomoji = cfg.get("kaomoji")
+    if not isinstance(kaomoji, dict):
+        kaomoji = {}
+    kaomoji.setdefault("enabled", False)
+    kaomoji.setdefault("level", "light")
+    if kaomoji["level"] not in KAOMOJI_LEVELS:
+        raise SystemExit(
+            f"kaomoji.level 必须是 {sorted(KAOMOJI_LEVELS)} 之一，当前为 {kaomoji['level']!r}。"
+        )
+    cfg["kaomoji"] = kaomoji
     cfg.setdefault("emoji", "style_default")
     cfg.setdefault("scene_adapt", True)
 
@@ -321,9 +428,22 @@ def migrate_config(cfg: dict) -> dict:
     return cfg
 
 
-def load_config(path) -> dict:
-    """读取并规范化一份用户配置。"""
-    return normalize_config(migrate_config(load_json(Path(path), label="配置文件")))
+def load_config(path=None, fallback_defaults: bool = True) -> dict:
+    """读取并规范化一份用户配置。
+
+    path 不存在（或未指定）且 fallback_defaults 为真时回退到 defaults.json。
+    CLI、MCP 工具与宿主适配层三条入口共用这一份实现。
+    """
+    path = Path(path) if path else None
+    if path is None or not path.exists():
+        if fallback_defaults and defaults_path().exists():
+            path = defaults_path()
+        else:
+            raise SystemExit(
+                f"找不到配置文件：{path}"
+                if path else "没有指定配置，且找不到 config/defaults.json。"
+            )
+    return normalize_config(migrate_config(load_json(path, label="配置文件")))
 
 
 def save_config(path, cfg: dict) -> None:
@@ -335,6 +455,45 @@ def save_config(path, cfg: dict) -> None:
         json.dumps(cfg, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
     tmp.replace(path)
+
+
+def save_history(path, history, limit: int = 50) -> None:
+    """原子写入风格历史（只留最近 limit 条）。
+
+    历史写不进去不该让整轮对话失败，所以 OSError 只警告不抛出。
+    """
+    path = Path(path)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_name(path.name + ".tmp")
+        tmp.write_text(
+            json.dumps(list(history)[-limit:], ensure_ascii=False), encoding="utf-8"
+        )
+        tmp.replace(path)
+    except OSError as exc:
+        print(f"警告：历史文件写入失败（{exc}），本轮未落盘：{path}", file=sys.stderr)
+
+
+def apply_config_patch(cfg: dict, patch: dict) -> dict:
+    """把控制指令 / set_user_style 的配置变更合并进 cfg（不做 normalize）。
+
+    - 只接受 CONFIG_KEYS 里的键，未知键直接报错（防止拼错静默写进配置）
+    - 值为 None 表示「不改动」；switch / kaomoji 是字典，做键级合并
+    """
+    if not isinstance(patch, dict):
+        raise SystemExit("配置变更必须是 JSON 对象。")
+    for key, value in patch.items():
+        if value is None:
+            continue
+        if key not in CONFIG_KEYS:
+            raise SystemExit(
+                f"未知配置键：{key}。可用：{', '.join(sorted(CONFIG_KEYS))}"
+            )
+        if key in ("switch", "kaomoji") and isinstance(value, dict):
+            cfg.setdefault(key, {}).update(value)
+        else:
+            cfg[key] = value
+    return cfg
 
 
 def validate_style_ids(ids, catalog: dict) -> None:
@@ -416,6 +575,19 @@ def pick(cfg: dict, history=None, seed=None) -> dict:
         "history": history + [main],
         "notes": notes,
     }
+
+
+def members_with_weights(cfg: dict, ids) -> list:
+    """把风格 id 列表配上配置里的权重，返回 [(id, weight), ...]。
+
+    单项时权重恒为 1（单风格没有配比可言）。CLI（--config）与宿主适配层共用，
+    保证两处提示词里的主/副配比一致。
+    """
+    weight_map = {item["id"]: item["weight"] for item in cfg["styles"]}
+    members = [(sid, weight_map.get(sid, 1)) for sid in ids]
+    if len(members) == 1:
+        members = [(members[0][0], 1)]
+    return members
 
 
 def enrich(result: dict, catalog: dict) -> dict:

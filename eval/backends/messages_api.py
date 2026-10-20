@@ -28,6 +28,7 @@ from .base import Backend
 
 class MessagesApiBackend(Backend):
     name = "messages_api"
+    can_generate = True
 
     def __init__(self, base_url=None, api_key=None, model=None, path=None,
                  auth_header=None, version_header=None, version=None):

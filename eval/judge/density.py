@@ -77,11 +77,20 @@ def judge(responses: dict, cases: dict, *, density_level: str = "standard",
         detail += f" 另有 {len(too_short)} 条长度不足未计入。"
     if missing:
         detail += f" 另有 {len(missing)} 条用例缺回复，未计入。"
+    notes = [
+        {
+            "case_id": item["case_id"],
+            "reason": f"回复短于 {item['required']} 字（实际 {item['chars']} 字），"
+                      "不计入密度判定",
+        }
+        for item in too_short
+    ]
     return metric(
         "助词密度",
         "≥90% 落入风格区间",
         f"{ratio * 100:.1f}%（{in_range}/{samples}）",
         ratio >= 0.90,
         detail=detail,
-        failures=failures + too_short,
+        failures=failures,
+        notes=notes,
     )

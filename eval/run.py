@@ -39,7 +39,7 @@ def main(argv=None) -> int:
     parser.add_argument("--backend", default="none",
                         help="评审后端：none / fixture / chat_completions / messages_api / manual")
     parser.add_argument("--kaomoji", choices=["off", "on", "both"], default="both",
-                        help="颜文字开关的判定方式，默认两态都跑")
+                        help="颜文字判定：off 只判关闭态 / on 只判开启态 / both 两态都判")
     parser.add_argument("--generate", action="store_true", help="先生成缺失的回复")
     parser.add_argument("--overwrite", action="store_true", help="生成时覆盖已有回复")
     parser.add_argument("--density", default="standard", choices=["light", "standard", "strong"],
@@ -63,6 +63,10 @@ def main(argv=None) -> int:
     if args.generate:
         if not backend_ok:
             raise SystemExit(f"生成需要可用的后端，当前不可用：{backend_reason}")
+        if not getattr(backend, "can_generate", False):
+            raise SystemExit(
+                f"{args.backend} 后端不支持生成回复；生成请用 chat_completions / "
+                "messages_api，或把回复手工放进 fixtures/responses/。")
         print("生成回复中……")
         stats = generator.generate_all(
             backend, case_sets, responses_dir,
@@ -79,7 +83,8 @@ def main(argv=None) -> int:
     # 确定性指标
     metrics.append(density.judge(responses, chats))
     metrics.append(rules.judge(responses, chats))
-    metrics.append(kaomoji.judge(responses, chats, kaomoji_enabled=False))
+    if args.kaomoji in ("off", "both"):
+        metrics.append(kaomoji.judge(responses, chats, kaomoji_enabled=False))
     if args.kaomoji in ("on", "both"):
         metrics.append(kaomoji.judge(responses, chats, kaomoji_enabled=True))
         metrics.append(kaomoji.frequency(chats, responses, kaomoji_enabled=True))

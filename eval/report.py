@@ -10,6 +10,15 @@ FAIL = "❌ 未达标"
 SKIP = "⏭️ 未评测"
 
 
+def _detail_line(entry: dict) -> str:
+    case_id = entry.get("case_id") or entry.get("scenario") or entry.get("style") or ""
+    reason = entry.get("reason") or entry.get("detail") or ""
+    extra = entry.get("type") or entry.get("expected") or ""
+    parts = [part for part in (extra, reason) if part]
+    head = f"`{case_id}`" if case_id else "（无编号）"
+    return f"- {head} {'｜'.join(parts)}" if parts else f"- {head}"
+
+
 def render(metrics: list, meta: dict | None = None) -> str:
     meta = meta or {}
     lines = ["# 语气助词 Skill 评测报告", ""]
@@ -52,20 +61,21 @@ def render(metrics: list, meta: dict | None = None) -> str:
             lines.append(item["detail"])
             lines.append("")
 
-        failures = item.get("failures") or []
-        if not failures:
-            continue
-        lines.append(f"#### {item['metric']} · 未通过明细（{len(failures)}）")
-        lines.append("")
-        for failure in failures[:40]:
-            case_id = failure.get("case_id") or failure.get("scenario") or failure.get("style") or ""
-            reason = failure.get("reason") or failure.get("detail") or ""
-            extra = failure.get("type") or failure.get("expected") or ""
-            parts = [part for part in (extra, reason) if part]
-            lines.append(f"- `{case_id}` {'｜'.join(parts)}")
-        if len(failures) > 40:
-            lines.append(f"- …另有 {len(failures) - 40} 条")
-        lines.append("")
+        # 未通过明细是真违规；未计入明细是测量缺口（缺回复、未作答、长度不足），
+        # 两者分开渲染，别把「没测到」显示成「没达标」。
+        for label, entries in (
+            ("未通过明细", item.get("failures") or []),
+            ("未计入明细", item.get("notes") or []),
+        ):
+            if not entries:
+                continue
+            lines.append(f"#### {item['metric']} · {label}（{len(entries)}）")
+            lines.append("")
+            for entry in entries[:40]:
+                lines.append(_detail_line(entry))
+            if len(entries) > 40:
+                lines.append(f"- …另有 {len(entries) - 40} 条")
+            lines.append("")
 
     return "\n".join(lines)
 

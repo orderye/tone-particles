@@ -18,6 +18,8 @@ JSON_FENCE_RE = re.compile(r"```(?:json)?\s*(.+?)\s*```", re.S)
 
 class Backend:
     name = "base"
+    # 是否能真的生成回复（档案/人工后端不能；run.py --generate 会据此提前报错）
+    can_generate = False
 
     def available(self):
         """返回 (是否可用, 原因)。不可用时原因会写进报告。"""

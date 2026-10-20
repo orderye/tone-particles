@@ -137,7 +137,7 @@ MCP 工具不代替宿主的安全策略：宿主平台的使用政策优先于�
 
 ```bash
 # 自检
-python3 mcp/tests/test_mcp.py
+python3 tests/test_mcp.py
 
 # 手动敲一遍协议
 printf '%s\n' \

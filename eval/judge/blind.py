@@ -12,7 +12,7 @@ from __future__ import annotations
 import hashlib
 import random
 
-from .common import catalog, metric, missing_replies, skipped_metric
+from .common import answered, catalog, metric, missing_replies, skipped_metric, style_meta
 
 BLIND_RUBRIC = """
 从给定的 21 个候选风格里，选出与这条回复最接近的一种。
@@ -53,7 +53,7 @@ def judge(responses: dict, cases: dict, backend=None) -> dict:
     checked = 0
     correct = 0
     failures = []
-    unanswered = 0
+    notes = []
     missing = missing_replies(cases, responses)
 
     for case in cases["cases"]:
@@ -62,7 +62,7 @@ def judge(responses: dict, cases: dict, backend=None) -> dict:
             continue
         prompt = pool[case["prompt"]] if pool else case.get("user_input", "")
         options = _options(_stable_seed(case["id"]))
-        meta = catalog()[case["style"]]
+        meta = style_meta(case["style"])
         expected = f"{meta['id']} {meta['name']}"
 
         verdict = backend.judge(BLIND_RUBRIC, {
@@ -71,30 +71,25 @@ def judge(responses: dict, cases: dict, backend=None) -> dict:
             "options": options,
         })
 
-        choice = (verdict or {}).get("choice")
-        if not choice:
-            unanswered += 1
-            failures.append({
-                "case_id": case["id"],
-                "expected": expected,
-                "reason": "评审未给出结论",
-            })
+        if not answered(verdict, "choice"):
+            # 后端没给出结论（如档案里没有这条的评审记录）＝没测到，不算失败
+            notes.append({"case_id": case["id"], "reason": "评审未给出结论，未计入"})
             continue
         checked += 1
-        if choice == expected:
+        if verdict["choice"] == expected:
             correct += 1
         else:
             failures.append({
                 "case_id": case["id"],
                 "expected": expected,
-                "chosen": choice,
-                "reason": (verdict or {}).get("reason", ""),
+                "chosen": verdict["choice"],
+                "reason": verdict.get("reason", ""),
             })
 
     if checked == 0:
         return skipped_metric(
             "风格盲测", "≥80% 识别率",
-            f"没有可用的评审结果（{unanswered} 条未作答，{len(failures)} 条缺回复）。",
+            f"没有可用的评审结果（{len(notes)} 条未作答）。",
         )
 
     ratio = correct / checked
@@ -108,4 +103,5 @@ def judge(responses: dict, cases: dict, backend=None) -> dict:
         ratio >= 0.80,
         detail=detail,
         failures=failures,
+        notes=notes,
     )

@@ -18,6 +18,7 @@ DEFAULT_JUDGMENTS = Path(__file__).resolve().parent.parent / "fixtures" / "judgm
 
 class FixtureBackend(Backend):
     name = "fixture"
+    can_generate = False
 
     def __init__(self, responses_dir=None, judgments_dir=None):
         self.responses_dir = Path(responses_dir) if responses_dir else DEFAULT_RESPONSES
@@ -29,8 +30,8 @@ class FixtureBackend(Backend):
         return True, f"使用档案目录 {self.responses_dir}"
 
     def generate(self, system: str, user: str) -> str:
-        # 生成阶段由 run.py 直接读档案，不经过这里
-        return ""
+        raise RuntimeError(
+            "fixture 后端只读档案，不支持生成回复；请用 chat_completions / messages_api。")
 
     def judge(self, rubric: str, payload: dict) -> dict:
         case_id = payload.get("case_id")

@@ -23,7 +23,7 @@ python3 mcp/server.py --config /path/to/user-config.json
 自检：
 
 ```bash
-python3 mcp/tests/test_mcp.py
+python3 tests/test_mcp.py
 ```
 
 ## 注册到客户端

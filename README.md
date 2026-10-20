@@ -1,6 +1,6 @@
 # 语气助词 Skill（tone-particles）
 
-版本 0.2.0 ｜ 对应 PRD v0.1 ｜ 21 种中文口吻风格
+版本 0.2.1 ｜ 对应 PRD v0.1 ｜ 21 种中文口吻风格
 
 仓库：[GitHub](https://github.com/orderye/tone-particles) ｜ [CNB 镜像](https://cnb.cool/toroyxxx/tone-particles) ｜ [Releases](https://github.com/orderye/tone-particles/releases)
 
@@ -54,8 +54,13 @@ tone-particles/
 ├── mcp/                     # MCP 服务（不随包分发）
 │   ├── server.py            # JSON-RPC 2.0 over stdio
 │   ├── tools.py             # 四个工具
-│   └── tests/               # 自检
+│   └── schemas.py           # 工具的入参 schema
+├── tools/                   # 仓库工具（不随包分发）
+│   ├── selfcheck.py         # 自检：配置、风格一致性、CLI、单元测试
+│   └── package.py           # 构建 dist/tone-particles-<版本>.zip
+├── tests/                   # 单元测试（不随包分发）
 ├── Docs/                    # PRD 与接入指南（不随包分发）
+├── VERSION                  # 版本单一来源（不随包分发）
 └── dist/                    # 打包好的 zip（不随包分发）
 ```
 
@@ -83,7 +88,7 @@ git clone https://github.com/orderye/tone-particles.git .skills/tone-particles
 git clone https://cnb.cool/toroyxxx/tone-particles.git ~/.skills/tone-particles
 ```
 
-也可以直接下载 Release 里的 `tone-particles-0.2.0.zip` 解压后放入 skills 目录。
+也可以直接下载 Release 里的 `tone-particles-0.2.1.zip` 解压后放入 skills 目录。
 
 手动复制的方式同样可用，在 `tone-particles` 的上一级目录执行：
 
@@ -97,7 +102,9 @@ mkdir -p ~/.skills && cp -R tone-particles ~/.skills/
 
 ### 支持 zip 导入的平台
 
-直接上传 `dist/tone-particles-0.2.0.zip`（zip 顶层是 `tone-particles/` 目录，`SKILL.md` 位于该目录内）。不同版本的 Skills 入口位置可能变化，以官方文档为准。
+直接上传 `dist/tone-particles-0.2.1.zip`（zip 顶层是 `tone-particles/` 目录，`SKILL.md` 位于该目录内）。不同版本的 Skills 入口位置可能变化，以官方文档为准。
+
+维护者重建分发包用 `python3 tools/package.py`：白名单构建（只含 README、SKILL.md、config、references、scripts、styles）、顶层固定 `tone-particles/`、条目排序与固定时间戳保证同样内容产出字节一致的包；版本号读根目录 `VERSION`，并校验 README 与 `mcp/server.py` 的版本串一致。
 
 ### 任意对话应用（系统提示词注入）
 
@@ -267,30 +274,20 @@ python3 scripts/check_density.py reply.txt --style S09 --strict
 ## 测试
 
 ```bash
-# 配置与风格文件完整性
-python3 - <<'PY'
-import json, pathlib
-root = pathlib.Path(".")
-styles = json.loads((root/"config/styles.json").read_text(encoding="utf-8"))["styles"]
-assert len(styles) == 21, len(styles)
-for item in styles:
-    path = root/item["file"]
-    assert path.exists(), path
-    text = path.read_text(encoding="utf-8")
-    for field in ["定位", "词库", "签名元素", "颜文字"]:
-        assert field in text, (path, field)
-print("OK: 21 styles, all files complete")
-PY
-
-# 随机与权重
-python3 scripts/pick_style.py config/user-config.example.json '[]' --simulate 1000 --seed 42
-
-# 密度与硬规则（从 stdin 传入待检文本）
-printf '哼，这种小问题还要我看吗……算了。第 8 行少了个括号，改完就能跑了。\n' \
-  | python3 scripts/check_density.py --style S09
+# 一条命令跑全部自检：四个 config JSON、21 风格完整性、
+# md↔json 一致性（密度 / 颜文字倾向 / 签名元素）、CLI 冒烟、三个单元测试
+python3 tools/selfcheck.py
 
 # 端到端评测（确定性指标；需模型的三项标为「未评测」）
 python3 eval/run.py
+```
+
+单元测试在 `tests/`（纯标准库，不依赖 pytest），也可以单独跑：
+
+```bash
+python3 tests/test_core.py   # 核心函数：配置归一、抽样、轮次状态机
+python3 tests/test_host.py   # 宿主适配层（含权重配比回归）
+python3 tests/test_mcp.py    # MCP 协议与四个工具
 ```
 
 ## 设计说明与已知限制
@@ -310,5 +307,6 @@ python3 eval/run.py
 
 ## 版本
 
+- `0.2.1`：修复宿主适配层丢弃配置权重（宿主注入的配比与 CLI 不一致）、`--root` 不生效、MCP 静默写入未知配置键三处缺陷；eval 判分不再把「评审未作答 / 回复长度不足」显示成失败；边界字符集、违规类型、枚举与颜文字字符集收敛为单一来源，并新增 md↔json 一致性校验；补充 `tests/` 单元测试与 `tools/`（自检、可复现打包）。
 - `0.2.0`：抽出共享核心 `scripts/_core.py`，三个 CLI 的配置、密度区间与抽样语义收敛到一处实现；补齐颜文字违规规则、关系位禁用词与密度档位校验；新增评测体系（`eval/`）、宿主适配层（`integrations/`）与 MCP 服务（`mcp/`）。对应 PRD M4–M6。
 - `0.1.0`：21 风格、四种模式、导入向导、融合 / 随机、场景自适应、颜文字、三个脚本。对应 PRD M1–M3。

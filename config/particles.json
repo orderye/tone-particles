@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "note": "density_categories 计入语气助词密度；discourse_markers 与 structural 单独统计，不计入密度；banned 任何风格都禁用；banned_phrases 是逐字 count 检不出的长句禁用；exceptions 是含助词但不算助词的普通词。",
+  "note": "density_categories 里的「句末·*」与「句首·惊讶感叹 / 句首·思考停顿 / 轻哼与不满」计入语气助词密度，其余分类（笑声、拟声、叠词、句型等）作为风格短语单独统计；discourse_markers 与 structural 也不计入密度；banned 任何风格都禁用；banned_phrases 是逐字 count 检不出的长句禁用；exceptions 是含助词但不算助词的普通词。",
   "density_categories": {
     "句末·舒缓确认": ["吧", "呢", "啊", "呀", "哦", "噢", "嘛", "啦", "呐", "哈", "喔"],
     "句末·软萌撒娇": ["哒", "嘞", "鸭", "捏", "咩", "惹"],

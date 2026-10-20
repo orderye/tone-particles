@@ -11,7 +11,7 @@ PRD 通过线：100%——去掉语气后与无风格版本信息等价。
 
 from __future__ import annotations
 
-from .common import metric, missing_replies, skipped_metric
+from .common import answered, metric, missing_replies, skipped_metric
 
 STRIP_PROMPT = (
     "把下面这段回复里的语气成分全部去掉：语气助词、口头禅、颜文字、emoji、"
@@ -40,10 +40,18 @@ def judge(responses: dict, cases: dict, backend=None) -> dict:
     ok, reason = backend.available()
     if not ok:
         return skipped_metric("内容保真", "100% 等价", f"评审后端不可用：{reason}")
+    if not getattr(backend, "can_generate", False):
+        # 保真判定分两步：先让模型剥掉语气，再判等价。档案/人工后端做不了第一步。
+        return skipped_metric(
+            "内容保真", "100% 等价",
+            f"{getattr(backend, 'name', backend)} 后端不支持模型调用（无法剥语气），"
+            "内容保真需要 chat_completions / messages_api。",
+        )
 
     checked = 0
     equivalent = 0
     failures = []
+    notes = []
     missing = missing_replies(cases, responses)
 
     for case in cases["cases"]:
@@ -57,19 +65,27 @@ def judge(responses: dict, cases: dict, backend=None) -> dict:
             "original": reply,
             "plain": plain,
         })
+        if not answered(verdict, "equivalent"):
+            # 评审没给出「是否等价」的结论（如档案里没有该条的评审记录）
+            # ＝没测到，不是不达标
+            notes.append({"case_id": case["id"], "reason": "评审未给出结论，未计入"})
+            continue
         checked += 1
-        if (verdict or {}).get("equivalent") is True:
+        if verdict["equivalent"] is True:
             equivalent += 1
         else:
             failures.append({
                 "case_id": case["id"],
                 "reason": "；".join(
-                    (verdict or {}).get("missing", []) + (verdict or {}).get("changed", [])
+                    verdict.get("missing", []) + verdict.get("changed", [])
                 ) or "评审判定不等价",
             })
 
     if checked == 0:
-        return skipped_metric("内容保真", "100% 等价", "没有可评测的回复。")
+        return skipped_metric(
+            "内容保真", "100% 等价",
+            f"没有可用的评审结果（{len(notes)} 条未作答）。",
+        )
 
     ratio = equivalent / checked
     detail = f"共评审 {checked} 条回复，先剥语气再比对信息完整性。"
@@ -82,4 +98,5 @@ def judge(responses: dict, cases: dict, backend=None) -> dict:
         ratio >= 1.0,
         detail=detail,
         failures=failures,
+        notes=notes,
     )

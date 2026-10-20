@@ -46,10 +46,6 @@ def load_responses(directory=None) -> dict:
     return responses
 
 
-def blind_prompt(case: dict, pool: list) -> str:
-    return pool[case["prompt"]]
-
-
 # --------------------------------------------------------------------------
 # 风格与检查
 # --------------------------------------------------------------------------
@@ -59,11 +55,8 @@ def catalog() -> dict:
     return _core.load_catalog()[1]
 
 
-def catalog_data() -> dict:
-    return _core.load_catalog()[0]
-
-
 def style_meta(style_id: str) -> dict:
+    """取风格元数据；id 大小写不敏感，未知 id 给可读报错。"""
     meta = catalog().get(str(style_id).upper())
     if not meta:
         raise SystemExit(f"未知风格 id：{style_id}")
@@ -97,9 +90,9 @@ def style_markers(style_id: str) -> list:
                 continue
             markers.add(quoted)
     lexicon = sections.get("词库", "")
-    match = re.search(r"常用——(.+?)(?:；|$)", lexicon)
-    if match:
-        for word in re.split(r"[、,，]", match.group(1)):
+    common_words = _core.extract_common_words(lexicon)
+    if common_words and common_words != lexicon:
+        for word in re.split(r"[、,，]", common_words):
             word = word.strip()
             # 多字词才作为证据，且不能是纯标点（词库里也有「……」这种）
             if len(word) >= 2 and re.search(r"[一-鿿A-Za-z]", word):
@@ -107,13 +100,8 @@ def style_markers(style_id: str) -> list:
     return sorted(markers)
 
 
-def style_presence(reply: str, style_id: str) -> dict:
-    """回复里出现了多少该风格的标记。"""
-    hits = [marker for marker in style_markers(style_id) if marker in reply]
-    return {"count": len(hits), "hits": hits}
-
-
-CLAUSE_BOUNDARY = set("。！？!?；;，,、：:\n…～~（）()【】[]「」『』\"'“”‘’ \t\r|")
+# 小句边界符：与 check_density 的助词位置判定同源，避免两处漂移。
+CLAUSE_BOUNDARY = check_density.BOUNDARY
 
 
 def marker_present(text: str, marker: str) -> bool:
@@ -216,7 +204,24 @@ def distinctive_particles() -> set:
 # --------------------------------------------------------------------------
 
 
-def metric(name, threshold, value, passed, *, skipped=False, detail="", failures=None) -> dict:
+def answered(verdict, key: str) -> bool:
+    """评审结果里是否真的给出了结论（对应字段存在且非空）。
+
+    档案/人工后端在缺评审记录时会返回空 dict——那是「没测到」，不是「不达标」。
+    """
+    if not verdict or key not in verdict:
+        return False
+    value = verdict[key]
+    return value is not None and value != ""
+
+
+def metric(name, threshold, value, passed, *, skipped=False, detail="",
+           failures=None, notes=None) -> dict:
+    """指标容器。
+
+    failures 是「真违规/不达标」；notes 是「未计入」的条目（缺回复、未作答、
+    长度不足）。两者分开渲染，避免把测量缺口显示成失败。
+    """
     return {
         "metric": name,
         "threshold": threshold,
@@ -225,6 +230,7 @@ def metric(name, threshold, value, passed, *, skipped=False, detail="", failures
         "skipped": skipped,
         "detail": detail,
         "failures": failures or [],
+        "notes": notes or [],
     }
 
 
@@ -239,7 +245,3 @@ def missing_replies(cases: dict, responses: dict) -> list:
     通过数会被算成负数（用例数远大于回复数时尤其明显）。
     """
     return [case["id"] for case in cases["cases"] if responses.get(case["id"]) is None]
-
-
-def cjk_length(text: str) -> int:
-    return len(re.findall(r"[一-鿿]", text))

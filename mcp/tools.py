@@ -3,8 +3,8 @@
 四个工具对应 PRD 8.1 的方案 C：list_styles / get_style_prompt / set_user_style /
 pick_next_style。
 
-实现直接调用 skill 的核心纯函数，不经过命令行子进程——没有额外延迟，
-也绕开了 CLI 层「未知风格 id 静默通过」这类契约缺口。
+实现直接调用 skill 的核心纯函数，不经过命令行子进程——没有额外延迟，校验与
+报错口径也和 CLI（scripts/_core.py）共用同一份实现。
 """
 
 from __future__ import annotations
@@ -21,15 +21,15 @@ if str(SCRIPTS_DIR) not in sys.path:
 import _core  # noqa: E402
 import compose_prompt  # noqa: E402
 
-DEFAULT_CONFIG = SKILL_ROOT / "config" / "user-config.json"
-DEFAULTS_PATH = SKILL_ROOT / "config" / "defaults.json"
-
 
 class Tools:
     """四个 MCP 工具。config_path 指向当前用户的配置。"""
 
     def __init__(self, config_path=None, root=None):
-        self.root = Path(root) if root else SKILL_ROOT
+        if root:
+            # --root 指向新的 skill 根：styles / particles / defaults 都从那里取
+            _core.set_resource_root(root)
+        self.root = _core.skill_root()
         self.config_path = Path(config_path) if config_path else (
             self.root / "config" / "user-config.json")
         self._catalog = None
@@ -43,36 +43,16 @@ class Tools:
         return self._catalog
 
     def _config(self) -> dict:
-        path = self.config_path if self.config_path.exists() else DEFAULTS_PATH
-        if not path.exists():
-            raise ValueError(f"找不到配置文件：{self.config_path}")
-        raw = _core.load_json(path, label="配置文件")
-        return _core.normalize_config(_core.migrate_config(raw))
+        return _core.load_config(self.config_path)
 
     # -- 工具 -----------------------------------------------------------
 
     def list_styles(self, group=None, include_prompt=False):
         """列出 21 个风格。"""
         data, index = self.catalog
-        groups = data.get("groups", [])
-        items = []
-        for meta in index.values():
-            if group and meta.get("group") != group:
-                continue
-            entry = {
-                "id": meta["id"],
-                "name": meta["name"],
-                "group": meta.get("group"),
-                "one_liner": meta.get("one_liner"),
-                "vector": meta.get("vector"),
-                "density": meta.get("density"),
-                "kaomoji": meta.get("kaomoji"),
-                "signature": meta.get("signature", []),
-            }
-            if include_prompt:
-                entry["prompt"] = _core.style_text(meta)
-            items.append(entry)
-        return {"groups": groups, "count": len(items), "styles": items}
+        items = _core.catalog_entries(
+            data, index, group=group, include_prompt=bool(include_prompt))
+        return {"groups": data.get("groups", []), "count": len(items), "styles": items}
 
     def get_style_prompt(self, style_id, accents=None, weights=None, density=None, variant=None):
         """生成单一或融合风格的提示词。"""
@@ -90,25 +70,9 @@ class Tools:
         return compose_prompt.compose(members, weights, density or "standard", variants)
 
     def set_user_style(self, **patch):
-        """写入用户配置。"""
+        """写入用户配置。未知键报错；值为 None 表示不改动。"""
         cfg = self._config()
-        for key, value in patch.items():
-            if value is None:
-                continue
-            if key in ("switch", "kaomoji") and isinstance(value, dict):
-                cfg.setdefault(key, {}).update(value)
-            elif key == "styles":
-                cleaned = []
-                for item in value:
-                    if isinstance(item, str):
-                        item = {"id": item, "weight": 1}
-                    cleaned.append({
-                        "id": str(item["id"]).upper(),
-                        "weight": int(item.get("weight", 1)),
-                    })
-                cfg["styles"] = cleaned
-            else:
-                cfg[key] = value
+        _core.apply_config_patch(cfg, patch)
         cfg = _core.normalize_config(_core.migrate_config(cfg))
         _core.save_config(self.config_path, cfg)
         return {
@@ -121,15 +85,7 @@ class Tools:
         """按当前配置抽取本轮风格。"""
         cfg = self._config()
         result = _core.pick(cfg, history or [], seed=seed)
-        catalog = self.catalog[1]
-        main = result["main"]
-        if main not in catalog:
-            raise ValueError(
-                f"未知风格 id：{main}。可用：{', '.join(sorted(catalog))}")
-        result["main_name"] = catalog[main]["name"]
-        result["accent_names"] = [
-            catalog[sid]["name"] for sid in result["accents"] if sid in catalog
-        ]
+        _core.enrich(result, self.catalog[1])
         result["mode"] = cfg["mode"]
         return result
 

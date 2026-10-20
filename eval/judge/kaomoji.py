@@ -13,23 +13,18 @@ PRD 通过线：关闭时抽检 0 个；开启时全部取自该风格库、频�
 
 from __future__ import annotations
 
-from .common import analyze, catalog, metric, missing_replies, skipped_metric, _core
+from .common import (
+    _core,
+    analyze,
+    check_density,
+    metric,
+    missing_replies,
+    skipped_metric,
+    style_meta,
+)
 
-KAOMOJI_TYPES = {
-    "颜文字未开启",
-    "颜文字过多",
-    "颜文字不在风格库",
-    "颜文字与 emoji 同条",
-    "严肃场景出现颜文字",
-}
-
-# 倾向 → 每条回复允许的颜文字预算（次）。轻档再减半。
-TENDENCY_RATE = {
-    "high": 1.0,
-    "medium": 0.5,
-    "low": 0.25,
-    "very_low": 1.0 / 6.0,
-}
+# 违规类型与生产脚本同源（scripts/check_density.py）
+KAOMOJI_TYPES = check_density.KAOMOJI_TYPES
 
 
 def judge(responses: dict, cases: dict, *, kaomoji_enabled: bool = False) -> dict:
@@ -81,14 +76,13 @@ def frequency(cases: dict, responses: dict, kaomoji_enabled: bool = True) -> dic
 
     单条回复判不了频率（PRD 说「约每 N 条 1 个」），所以按同一风格的回复聚合计算。
     """
-    catalog_data = catalog()
     per_style = {}
     for case in cases["cases"]:
         reply = responses.get(case["id"])
         style = case.get("style")
         if reply is None or not style:
             continue
-        meta = catalog_data[style]
+        meta = style_meta(style)
         bucket = per_style.setdefault(style, {"replies": 0, "kaomoji": 0, "tendency": meta.get("kaomoji")})
         bucket["replies"] += 1
         bucket["kaomoji"] += analyze(reply, style, kaomoji_enabled=kaomoji_enabled)["kaomoji_count"]
@@ -96,7 +90,7 @@ def frequency(cases: dict, responses: dict, kaomoji_enabled: bool = True) -> dic
     failures = []
     for style, bucket in sorted(per_style.items()):
         tendency = bucket["tendency"] or "medium"
-        budget = TENDENCY_RATE.get(tendency, 0.5)
+        budget = _core.kaomoji_budget(tendency)
         allowed = budget * bucket["replies"]
         if bucket["kaomoji"] > allowed + 0.001:
             failures.append({

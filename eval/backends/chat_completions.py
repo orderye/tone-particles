@@ -24,6 +24,7 @@ from .base import Backend
 
 class ChatCompletionsBackend(Backend):
     name = "chat_completions"
+    can_generate = True
 
     def __init__(self, base_url=None, api_key=None, model=None, temperature=None,
                  auth_header=None, auth_prefix=None):
