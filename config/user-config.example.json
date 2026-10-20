@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "mode": "blend_random",
+  "styles": [
+    { "id": "S09", "weight": 3 },
+    { "id": "S04", "weight": 2 },
+    { "id": "S17", "weight": 1 }
+  ],
+  "variants": {},
+  "density": "standard",
+  "switch": {
+    "granularity": "per_message",
+    "no_repeat_window": 3,
+    "locked": false
+  },
+  "scene_adapt": true,
+  "kaomoji": {
+    "enabled": false,
+    "level": "light"
+  },
+  "emoji": "style_default",
+  "paused": false
+}

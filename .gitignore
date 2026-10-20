@@ -1,0 +1,10 @@
+.DS_Store
+__pycache__/
+*.py[cod]
+
+# CNB 发布用 worktree
+/.cnb-worktree/
+
+# 运行时生成的用户配置，不随仓库分发
+config/user-config.json
+config/tone-history.json
