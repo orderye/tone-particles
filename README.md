@@ -13,7 +13,8 @@
 - **内容保真**：先答后套；助词只作用于表达层，不进入代码、表格、数字与专有名词。
 - **场景自适应**：代码、医疗、法律、情绪低落、危机信号时自动降档或关闭。
 - **可复现的随机**：由脚本按权重与去重窗口抽样，模型只负责表达。
-- **可测试**：自带密度与硬规则检测脚本。
+- **可测试**：自带密度与硬规则检测脚本，另有一套端到端评测（`eval/`）。
+- **共享核心**：三个 CLI 共用 `scripts/_core.py`，配置、密度区间与抽样语义只有一处定义。
 
 ## 目录
 
@@ -34,10 +35,18 @@ tone-particles/
 │   ├── fusion-rules.md      # 融合、冲突、随机、降级
 │   ├── safety.md            # 安全边界与危机处理
 │   └── onboarding.md        # 导入向导
-└── scripts/
-    ├── pick_style.py        # 随机 / 加权选风格
-    ├── compose_prompt.py    # 生成融合提示词
-    └── check_density.py     # 密度与硬规则检测
+├── scripts/
+│   ├── _core.py             # 共享核心：配置、风格目录、密度区间、抽样
+│   ├── pick_style.py        # 随机 / 加权选风格
+│   ├── compose_prompt.py    # 生成融合提示词
+│   └── check_density.py     # 密度与硬规则检测
+├── eval/                    # 评测体系（不随包分发）
+│   ├── run.py               # 评测入口
+│   ├── cases/               # 用例集
+│   ├── judge/               # 各指标判分器
+│   └── backends/            # 模型后端（可缺席）
+├── Docs/                    # PRD 与部署方案（不随包分发）
+└── dist/                    # 打包好的 zip（不随包分发）
 ```
 
 用户配置 `config/user-config.json` 在首次导入后生成，不随包分发；随机模式还会生成 `config/tone-history.json`，记录最近使用的风格，避免连续重复。`dist/` 下是打包好的 zip。
@@ -253,6 +262,9 @@ python3 scripts/pick_style.py config/user-config.example.json '[]' --simulate 10
 # 密度与硬规则（从 stdin 传入待检文本）
 printf '哼，这种小问题还要我看吗……算了。第 8 行少了个括号，改完就能跑了。\n' \
   | python3 scripts/check_density.py --style S09
+
+# 端到端评测（确定性指标；需模型的三项标为「未评测」）
+python3 eval/run.py
 ```
 
 ## 设计说明与已知限制

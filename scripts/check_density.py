@@ -5,11 +5,14 @@
     python3 scripts/check_density.py reply.txt --style S09
     cat reply.txt | python3 scripts/check_density.py --style S02 --json
     python3 scripts/check_density.py reply.txt --strict
+    python3 scripts/check_density.py reply.txt --style S09 --density strong --kaomoji
 
 说明：
 - 密度 = 主助词次数 / 正文汉字数 × 100；结构性「的 / 了」单独统计，不计入密度。
 - 位置规则：句末类只在分句末尾计数；句首类只在分句开头计数；固定短语任意位置计数。
 - 规则检查：每小句 ≤ 1 个主助词、不堆叠、代码 / 表格 / 链接内无助词、禁用词。
+- 颜文字检查：关闭时应为 0、开启时须取自该风格库、单条不超过 1 个、不与 emoji 同条、
+  代码 / 表格等严肃场景内不得出现。
 """
 
 from __future__ import annotations
@@ -21,9 +24,11 @@ import sys
 from collections import Counter
 from pathlib import Path
 
-SKILL_ROOT = Path(__file__).resolve().parent.parent
-PARTICLES_PATH = SKILL_ROOT / "config" / "particles.json"
-STYLES_PATH = SKILL_ROOT / "config" / "styles.json"
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import _core  # noqa: E402  本地模块，需先补 sys.path
+
+PARTICLES_PATH = _core.PARTICLES_PATH
+STYLES_PATH = _core.STYLES_PATH
 
 CJK_RE = re.compile(r"[一-鿿]")
 CLAUSE_SPLIT_RE = re.compile(r"[^。！？!?；;，,、：:\n…～~]+")
@@ -33,16 +38,18 @@ LINK_RE = re.compile(r"\[([^\]]*)\]\([^)]*\)")
 TABLE_LINE_RE = re.compile(r"^\s*\|.*\|\s*$", re.M)
 BOUNDARY = set("。！？!?；;，,、：:…—～~（）()【】[]「」『』\"'“”‘’ \t\n\r|")
 
-# 常见词里的「伪助词」，避免误计
-EXCEPTION_WORDS = [
-    "酒吧", "网吧", "吧台", "吗啡", "哈欠", "哈佛", "哈尔滨", "近乎", "几乎",
-    "在乎", "似乎", "呼吸", "呼吁", "呼气", "呼声", "一切", "切换", "切实",
-    "罢工", "呢喃", "哼歌", "呜咽", "咕咚",
-]
-
-KAOMOJI_CHARS = set("≧≦▽ωᴗ✿◕‿¬¯︶︿皿ε°⊙дﾟヮᗜ๑ゞノヽﾉ٩ง✧☆★")
+KAOMOJI_CHARS = set(
+    "≧≦▽ωᴗ✿◕‿¬¯︶︿皿ε°⊙дﾟヮᗜ๑ゞノヽﾉ٩ง✧☆★"
+    "´˘˙̀́̄•∀∇⊂╹◡〃・﹏－＜＞＼＾｡･￣"
+    "ˊˋ｀へ"
+)
 KAOMOJI_RE = re.compile(r"[\(（][^\)）\n]{1,24}[\)）]")
+# 阿拉伯数字包裹形式，如 ٩(ˊᗜˋ)و
+ARABIC_KAOMOJI_RE = re.compile(r"[٩۽]\([^)\n]{1,24}\)[و۽]")
 ASCII_KAOMOJI_RE = re.compile(r"\^_\^|:\)|:D|T_T|;-;|>_<")
+EMOJI_RE = re.compile(
+    "[\U0001F300-\U0001FAFF\U00002600-\U000027BF\U0001F1E6-\U0001F1FF⬀-⯿]"
+)
 
 # 位置策略
 FINAL_OVERRIDES = {"耶"}
@@ -51,13 +58,7 @@ ANYWHERE_OVERRIDES = set()
 
 
 def load_json(path: Path):
-    try:
-        with path.open("r", encoding="utf-8") as fh:
-            return json.load(fh)
-    except FileNotFoundError:
-        raise SystemExit(f"找不到文件：{path}")
-    except json.JSONDecodeError as exc:
-        raise SystemExit(f"不是合法 JSON：{path}（{exc}）")
+    return _core.load_json(path)
 
 
 def build_lexicon(data: dict):
@@ -92,9 +93,9 @@ def build_lexicon(data: dict):
     return final_words, initial_words, phrase_words, all_words
 
 
-def exception_spans(text: str):
+def exception_spans(text: str, exceptions):
     spans = []
-    for word in EXCEPTION_WORDS:
+    for word in exceptions:
         start = text.find(word)
         while start != -1:
             spans.append((start, start + len(word)))
@@ -106,7 +107,7 @@ def overlap(start, end, spans) -> bool:
     return any(start < span_end and end > span_start for span_start, span_end in spans)
 
 
-def scan_clause(text: str, final_words, initial_words, phrase_words):
+def scan_clause(text: str, final_words, initial_words, phrase_words, exceptions):
     """返回 [(word, start, end, kind)]，同一位置优先匹配更长的词。
 
     kind 为 modal（句末助词 / 句首叹词）或 phrase（风格短语）。
@@ -119,7 +120,7 @@ def scan_clause(text: str, final_words, initial_words, phrase_words):
             start = text.find(word, start + 1)
 
     candidates.sort(key=lambda item: (item[0], -(item[1] - item[0])))
-    spans = exception_spans(text)
+    spans = exception_spans(text, exceptions)
     chosen = []
     occupied = []
     for start, end, word in candidates:
@@ -149,10 +150,10 @@ def prose_view(raw: str) -> str:
     return text
 
 
-def scan_all(text: str, all_words):
+def scan_all(text: str, all_words, exceptions):
     """不按位置、只找词：用于代码与表格的违规检查。"""
     found = []
-    spans = exception_spans(text)
+    spans = exception_spans(text, exceptions)
     for word in sorted(all_words, key=len, reverse=True):
         start = text.find(word)
         while start != -1:
@@ -162,7 +163,7 @@ def scan_all(text: str, all_words):
     return found
 
 
-def count_non_overlapping(text: str, words) -> int:
+def count_non_overlapping(text: str, words, exceptions=()) -> int:
     """按最长优先统计，避免「其实吧」同时计入「其实」和「其实吧」。"""
     spans = []
     for word in sorted(words, key=len, reverse=True):
@@ -182,29 +183,55 @@ def first_hit_line(chunk: str, hits) -> str:
     return chunk.strip().splitlines()[0][:100] if chunk.strip() else ""
 
 
-def count_kaomoji(text: str) -> int:
-    total = 0
+def find_kaomoji(text: str) -> list:
+    """找出文本里的颜文字，返回 [(原文, 起点)]。"""
+    found = []
+    spans = []
+    # 阿拉伯数字包裹形式优先，它比内部的括号形式更完整
+    for match in ARABIC_KAOMOJI_RE.finditer(text):
+        found.append((match.group(0), match.start()))
+        spans.append((match.start(), match.end()))
     for match in KAOMOJI_RE.finditer(text):
+        if any(start < match.end() and match.start() < end for start, end in spans):
+            continue
         if sum(char in KAOMOJI_CHARS for char in match.group(0)) >= 2:
-            total += 1
-    total += len(ASCII_KAOMOJI_RE.findall(text))
-    return total
+            found.append((match.group(0), match.start()))
+    for match in ASCII_KAOMOJI_RE.finditer(text):
+        found.append((match.group(0), match.start()))
+    return found
 
 
-def load_target(style_id: str):
-    if not STYLES_PATH.exists():
-        return None, None
-    data = load_json(STYLES_PATH)
+def normalize_kaomoji(text: str) -> str:
+    """去掉空白后比对，模型可能把「( ˘ω˘ )」写成「(˘ω˘)」。"""
+    return re.sub(r"\s+", "", text)
+
+
+def count_kaomoji(text: str) -> int:
+    return len(find_kaomoji(text))
+
+
+def load_target(style_id: str, density_level: str = "standard"):
+    """返回 (密度区间, 风格展示名)。density_level 会缩放区间，与 compose_prompt 对齐。"""
+    data = _core.load_catalog()[0]
     for item in data.get("styles", []):
         if item["id"].upper() == style_id.upper():
-            return item.get("density"), f"{item['id']} {item['name']}"
+            factor = _core.density_factor(density_level)
+            low, high = _core.style_density_range(item, factor)
+            return [round(low, 2), round(high, 2)], f"{item['id']} {item['name']}"
     known = "、".join(item["id"] for item in data.get("styles", []))
     raise SystemExit(f"未知风格 id：{style_id}。可用：{known}")
 
 
-def analyze(raw: str, style_id: str | None = None, strict: bool = False) -> dict:
+def analyze(raw: str, style_id: str | None = None, strict: bool = False, *,
+             density_level: str = "standard", kaomoji_enabled: bool | None = None) -> dict:
+    """检查一段回复。
+
+    density_level：light / standard / strong，决定密度区间是否缩放。
+    kaomoji_enabled：True / False 控制颜文字开关规则；None 表示不检查该规则。
+    """
     particles = load_json(PARTICLES_PATH)
     final_words, initial_words, phrase_words, all_words = build_lexicon(particles)
+    exceptions = particles.get("exceptions", [])
 
     prose = prose_view(raw)
     chars = len(CJK_RE.findall(prose))
@@ -213,7 +240,7 @@ def analyze(raw: str, style_id: str | None = None, strict: bool = False) -> dict
 
     for clause_match in CLAUSE_SPLIT_RE.finditer(prose):
         clause = clause_match.group(0)
-        found = scan_clause(clause, final_words, initial_words, phrase_words)
+        found = scan_clause(clause, final_words, initial_words, phrase_words, exceptions)
         matches.extend(found)
         modal_in_clause = [item for item in found if item[3] == "modal"]
         if len(modal_in_clause) >= 2:
@@ -231,9 +258,12 @@ def analyze(raw: str, style_id: str | None = None, strict: bool = False) -> dict
     modal_count = len(modal_matches)
     phrase_count = len(phrase_matches)
     per_100 = round(modal_count / chars * 100, 1) if chars else 0.0
-    structural = prose.count("的") + prose.count("了")
+    structural_words = particles.get("structural", [])
+    structural = sum(prose.count(word) for word in structural_words)
     discourse = count_non_overlapping(prose, particles.get("discourse_markers", []))
-    kaomoji = count_kaomoji(raw)
+    kaomoji_hits = find_kaomoji(raw)
+    kaomoji = len(kaomoji_hits)
+    emoji_count = len(EMOJI_RE.findall(raw))
 
     violations = list(clause_issues)
 
@@ -250,7 +280,7 @@ def analyze(raw: str, style_id: str | None = None, strict: bool = False) -> dict
     # 代码块 / 行内代码
     code_chunks = FENCE_RE.findall(raw) + INLINE_CODE_RE.findall(raw)
     for chunk in code_chunks:
-        hits = scan_all(chunk, all_words)
+        hits = scan_all(chunk, all_words, exceptions)
         if hits:
             violations.append(
                 {
@@ -262,7 +292,7 @@ def analyze(raw: str, style_id: str | None = None, strict: bool = False) -> dict
 
     # 表格
     for line in TABLE_LINE_RE.findall(raw):
-        hits = scan_all(line, all_words)
+        hits = scan_all(line, all_words, exceptions)
         if hits:
             violations.append(
                 {
@@ -274,7 +304,7 @@ def analyze(raw: str, style_id: str | None = None, strict: bool = False) -> dict
 
     # 链接文字
     for link_text in LINK_RE.findall(raw):
-        hits = scan_all(link_text, all_words)
+        hits = scan_all(link_text, all_words, exceptions)
         if hits:
             violations.append(
                 {
@@ -296,7 +326,87 @@ def analyze(raw: str, style_id: str | None = None, strict: bool = False) -> dict
                 }
             )
 
-    target, style_name = load_target(style_id) if style_id else (None, None)
+    # 禁用短语（机械腔等长句禁用，逐字 count 检不出的部分）
+    for phrase in particles.get("banned_phrases", []):
+        occurrences = raw.count(phrase)
+        if occurrences:
+            violations.append(
+                {
+                    "type": "禁用短语",
+                    "detail": f"「{phrase}」出现 {occurrences} 次",
+                    "excerpt": phrase,
+                }
+            )
+
+    # 颜文字规则
+    kaomoji_library = []
+    if style_id:
+        catalog_data, catalog = _core.load_catalog()
+        meta = catalog.get(style_id.upper())
+        if meta:
+            kaomoji_library = _core.extract_kaomoji_library(_core.style_text(meta))
+    library_set = {normalize_kaomoji(item["kaomoji"]) for item in kaomoji_library}
+
+    if kaomoji_enabled is False and kaomoji:
+        violations.append(
+            {
+                "type": "颜文字未开启",
+                "detail": f"配置未开启颜文字，但出现了 {kaomoji} 个",
+                "excerpt": "、".join(item[0] for item in kaomoji_hits[:3]),
+            }
+        )
+    if kaomoji_enabled is True:
+        if kaomoji > 1:
+            violations.append(
+                {
+                    "type": "颜文字过多",
+                    "detail": f"单条回复出现 {kaomoji} 个颜文字，最多 1 个",
+                    "excerpt": "、".join(item[0] for item in kaomoji_hits[:3]),
+                }
+            )
+        if library_set:
+            for text, _ in kaomoji_hits:
+                normalized = normalize_kaomoji(text)
+                # 允许模型写出库内颜文字的片段（如库里有「(￣▽￣)ゞ」，写出「(￣▽￣)」也算命中）
+                if normalized not in library_set and not any(
+                    entry.startswith(normalized) for entry in library_set
+                ):
+                    violations.append(
+                        {
+                            "type": "颜文字不在风格库",
+                            "detail": f"「{text}」不属于该风格的颜文字库",
+                            "excerpt": text,
+                        }
+                    )
+        if kaomoji and emoji_count:
+            violations.append(
+                {
+                    "type": "颜文字与 emoji 同条",
+                    "detail": f"同一条回复出现 {kaomoji} 个颜文字与 {emoji_count} 个 emoji",
+                    "excerpt": "、".join(item[0] for item in kaomoji_hits[:3]),
+                }
+            )
+    if kaomoji:
+        for chunk in code_chunks:
+            if find_kaomoji(chunk):
+                violations.append(
+                    {
+                        "type": "严肃场景出现颜文字",
+                        "detail": "代码块内不应出现颜文字",
+                        "excerpt": first_hit_line(chunk, find_kaomoji(chunk)),
+                    }
+                )
+        for line in TABLE_LINE_RE.findall(raw):
+            if find_kaomoji(line):
+                violations.append(
+                    {
+                        "type": "严肃场景出现颜文字",
+                        "detail": "表格内不应出现颜文字",
+                        "excerpt": line.strip()[:120],
+                    }
+                )
+
+    target, style_name = load_target(style_id, density_level) if style_id else (None, None)
     target_status = None
     if target:
         low, high = target
@@ -320,7 +430,11 @@ def analyze(raw: str, style_id: str | None = None, strict: bool = False) -> dict
         "structural_count": structural,
         "discourse_count": discourse,
         "kaomoji_count": kaomoji,
+        "emoji_count": emoji_count,
         "style": style_name,
+        "density_level": density_level,
+        "kaomoji_enabled": kaomoji_enabled,
+        "kaomoji_library_size": len(library_set),
         "target": target,
         "target_status": target_status,
         "matches": dict(modal_counter.most_common()),
@@ -337,10 +451,12 @@ def render(result: dict) -> str:
         lines.append(f"风格：{result['style']}")
     if result["target"]:
         low, high = result["target"]
+        level = result.get("density_level", "standard")
+        suffix = "" if level == "standard" else f"（{_core.DENSITY_LABEL.get(level, level)}档）"
         if low == high:
-            lines.append(f"目标：{low} 次/百字（标准档）")
+            lines.append(f"目标：{low} 次/百字{suffix}")
         else:
-            lines.append(f"目标：{low}–{high} 次/百字（标准档）")
+            lines.append(f"目标：{low}–{high} 次/百字{suffix}")
     lines.append(f"正文汉字：{result['chars']}")
     lines.append(f"主助词：{result['modal_count']} 次 → {result['modal_per_100']} 次/百字")
     if result["target_status"] == "in_range":
@@ -387,6 +503,12 @@ def main(argv=None) -> int:
     parser.add_argument("--style", help="风格 id，如 S09，用于对比密度区间")
     parser.add_argument("--strict", action="store_true", help="密度超出区间也算失败")
     parser.add_argument("--json", action="store_true", help="输出 JSON")
+    parser.add_argument("--density", choices=sorted(_core.DENSITY_FACTOR),
+                        help="密度档位，决定目标区间是否缩放（默认 standard）")
+    parser.add_argument("--kaomoji", dest="kaomoji", action="store_true", default=None,
+                        help="已开启颜文字：检查是否取自风格库、单条是否超量")
+    parser.add_argument("--no-kaomoji", dest="kaomoji", action="store_false",
+                        help="未开启颜文字：出现颜文字即视为违规")
     args = parser.parse_args(argv)
 
     if args.file:
@@ -399,7 +521,13 @@ def main(argv=None) -> int:
             raise SystemExit("请提供文本文件，或通过 stdin 传入文本。")
         raw = sys.stdin.read()
 
-    result = analyze(raw, args.style, args.strict)
+    result = analyze(
+        raw,
+        args.style,
+        args.strict,
+        density_level=args.density or "standard",
+        kaomoji_enabled=args.kaomoji,
+    )
     if args.json:
         print(json.dumps(result, ensure_ascii=False, indent=2))
     else:

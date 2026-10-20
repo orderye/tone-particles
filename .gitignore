@@ -5,6 +5,10 @@ __pycache__/
 # CNB 发布用 worktree
 /.cnb-worktree/
 
+# 本地工具状态目录，不随仓库分发（通用点目录规则，不针对某个工具）
+/.[a-z]*/
+!/.github/
+
 # 运行时生成的用户配置，不随仓库分发
 config/user-config.json
 config/tone-history.json

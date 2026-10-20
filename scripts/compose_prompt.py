@@ -16,89 +16,57 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import sys
 from pathlib import Path
 
-SKILL_ROOT = Path(__file__).resolve().parent.parent
-STYLES_PATH = SKILL_ROOT / "config" / "styles.json"
-DENSITY_FACTOR = {"light": 0.5, "standard": 1.0, "strong": 1.5}
-DIMENSION_ORDER = ["warmth", "energy", "dominance", "childish", "distance", "verbosity", "particles", "formality"]
-DIMENSION_LABELS = {
-    "warmth": "温暖", "energy": "能量", "dominance": "强势", "childish": "稚气",
-    "distance": "距离", "verbosity": "话量", "particles": "助词", "formality": "正式",
-}
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import _core  # noqa: E402  本地模块，需先补 sys.path
 
-
-def load_json(path: Path):
-    try:
-        with path.open("r", encoding="utf-8") as fh:
-            return json.load(fh)
-    except FileNotFoundError:
-        raise SystemExit(f"找不到文件：{path}")
-    except json.JSONDecodeError as exc:
-        raise SystemExit(f"不是合法 JSON：{path}（{exc}）")
+DENSITY_FACTOR = _core.DENSITY_FACTOR
+VARIANT_LABEL = {"gentle": "温柔型", "strict": "严厉型"}
 
 
 def load_catalog():
-    data = load_json(STYLES_PATH)
-    return data, {item["id"]: item for item in data["styles"]}
+    return _core.load_catalog()
 
 
 def style_text(meta: dict) -> str:
-    path = SKILL_ROOT / meta["file"]
-    try:
-        return path.read_text(encoding="utf-8")
-    except FileNotFoundError:
-        raise SystemExit(f"找不到风格文件：{path}")
-
-
-def extract_field(text: str, label: str) -> str:
-    pattern = re.compile(rf"^- \*\*{re.escape(label)}\*\*[：:]\s*(.+)$", re.MULTILINE)
-    match = pattern.search(text)
-    return match.group(1).strip() if match else ""
-
-
-def extract_common_words(lexicon_line: str) -> str:
-    match = re.search(r"常用——(.+?)(?:；|$)", lexicon_line)
-    if match:
-        return match.group(1).strip()
-    return lexicon_line
+    return _core.style_text(meta)
 
 
 def extract_signature(text: str) -> str:
-    line = extract_field(text, "签名元素")
-    line = re.sub(r"^（融合时可被借用）[：:]?", "", line).strip()
-    return line
+    return _core.extract_signature(text)
+
+
+def extract_field(text: str, label: str) -> str:
+    return _core.extract_field(text, label)
+
+
+def extract_common_words(lexicon_line: str) -> str:
+    return _core.extract_common_words(lexicon_line)
 
 
 def extract_positioning(text: str) -> str:
-    return extract_field(text, "定位").rstrip("。")
+    return _core.extract_positioning(text)
 
 
 def extract_kaomoji(text: str) -> str:
-    match = re.search(r"^\*\*颜文字\*\*（开启时）[：:]\s*(.+)$", text, re.MULTILINE)
-    return match.group(1).strip() if match else ""
+    return _core.extract_kaomoji_line(text)
 
 
 def weighted_average(values, weights):
-    total = sum(weights)
-    return sum(value * weight for value, weight in zip(values, weights)) / total
+    return _core.weighted_average(values, weights)
 
 
 def density_range(members, weights, factor):
-    low = weighted_average([item["density"][0] for item in members], weights) * factor
-    high = weighted_average([item["density"][1] for item in members], weights) * factor
-    return low, high
+    return _core.density_range(members, weights, factor)
 
 
 def format_range(low: float, high: float) -> str:
-    if abs(low - high) < 0.05:
-        return f"{low:.1f}"
-    return f"{low:.1f}–{high:.1f}"
+    return _core.format_range(low, high)
 
 
-def build_guidance(vector: dict) -> list[str]:
+def build_guidance(vector: dict) -> list:
     lines = []
     formality = vector.get("formality", 5)
     dominance = vector.get("dominance", 5)
@@ -133,9 +101,8 @@ def build_guidance(vector: dict) -> list[str]:
     return lines
 
 
-def conflict_note(main_id: str, accent_id: str, catalog_data: dict):
-    pairs = {tuple(sorted(pair)) for pair in catalog_data.get("conflict_pairs", [])}
-    return tuple(sorted((main_id, accent_id))) in pairs
+def conflict_note(main_id: str, accent_id: str, catalog_data: dict) -> bool:
+    return _core.conflict_note(main_id, accent_id, catalog_data)
 
 
 def parse_members(args):
@@ -156,18 +123,17 @@ def parse_members(args):
 
 
 def resolve_from_config(args, catalog_data, catalog):
-    cfg = load_json(Path(args.config))
-    sys.path.insert(0, str(Path(__file__).resolve().parent))
-    from pick_style import normalize, pick  # local import to keep CLI paths simple
-
-    cfg = normalize(cfg)
+    """从配置文件解析本轮成员、密度与子模式。"""
+    cfg = _core.normalize_config(
+        _core.migrate_config(_core.load_json(Path(args.config), label="配置文件"))
+    )
     history = []
     if args.history:
         try:
             history = json.loads(args.history)
         except json.JSONDecodeError as exc:
             raise SystemExit(f"history 不是合法 JSON：{exc}")
-    result = pick(cfg, history, seed=args.seed)
+    result = _core.pick(cfg, history, seed=args.seed)
     ids = [result["main"]] + result["accents"]
     weights = []
     weight_map = {item["id"]: item["weight"] for item in cfg["styles"]}
@@ -178,7 +144,90 @@ def resolve_from_config(args, catalog_data, catalog):
     variants = cfg.get("variants", {})
     if not isinstance(variants, dict):
         variants = {}
+    # --variant 作为覆盖项，不再被 --config 静默忽略。
+    if args.variant:
+        variants = {**variants, "S20": args.variant}
     return list(zip(ids, weights)), cfg.get("density", "standard"), variants
+
+
+def compose(members, weights=None, density_level="standard", variants=None) -> dict:
+    """对外的稳定入口。
+
+    members 是 [(风格 id, 权重), ...]，第一项为主风格，最多 3 项。
+    返回提示词正文与结构化信息，供 CLI、宿主适配层与工具接口服务共用。
+    """
+    catalog_data, catalog = load_catalog()
+    members = [(str(sid).upper(), int(weight)) for sid, weight in members]
+    if not members:
+        raise SystemExit("至少要指定一个风格。")
+    if len(members) > 3:
+        members = members[:3]
+    # 去重并剔除与主风格相同的副风格
+    unique = [members[0]]
+    for sid, weight in members[1:]:
+        if sid not in [item[0] for item in unique]:
+            unique.append((sid, weight))
+    members = unique
+
+    _core.validate_style_ids([sid for sid, _ in members], catalog)
+
+    if weights is None:
+        weights = [4] + [2] * (len(members) - 1) if len(members) > 1 else [1]
+    else:
+        weights = [int(item) for item in weights][:len(members)]
+
+    density_level = density_level or "standard"
+    factor = _core.density_factor(density_level)
+
+    metas = [catalog[sid] for sid, _ in members]
+    total_weight = sum(weights)
+    shares = [weight / total_weight for weight in weights]
+    texts = [style_text(meta) for meta in metas]
+
+    dimension_order = _core.dimension_order(catalog_data)
+    dimension_labels = _core.dimension_labels(catalog_data)
+    vector = {
+        key: round(weighted_average([meta["vector"][key] for meta in metas], weights), 1)
+        for key in dimension_order
+    }
+    low, high = density_range(metas, weights, factor)
+
+    main_id = metas[0]["id"]
+    active_ids = {meta["id"] for meta in metas}
+    applied_variants = {
+        sid: value for sid, value in (variants or {}).items() if sid in active_ids
+    }
+
+    prompt = build_prompt(
+        metas, weights, shares, texts, vector, low, high,
+        density_level, factor, catalog_data, applied_variants,
+        dimension_order, dimension_labels
+    )
+    return {
+        "mode": "blend" if len(metas) > 1 else "single",
+        "density": density_level,
+        "density_multiplier": factor,
+        "density_range": [round(low, 2), round(high, 2)],
+        "members": [
+            {
+                "id": meta["id"],
+                "name": meta["name"],
+                "role": "main" if index == 0 else "accent",
+                "weight": weights[index],
+                "share": round(shares[index], 3),
+                "file": meta["file"],
+            }
+            for index, meta in enumerate(metas)
+        ],
+        "vector": vector,
+        "variants": applied_variants,
+        "conflicts": [
+            {"main": main_id, "accent": meta["id"]}
+            for meta in metas[1:]
+            if conflict_note(main_id, meta["id"], catalog_data)
+        ],
+        "prompt": prompt,
+    }
 
 
 def main(argv=None) -> int:
@@ -197,11 +246,10 @@ def main(argv=None) -> int:
     parser.add_argument("--json", action="store_true", help="输出 JSON")
     args = parser.parse_args(argv)
 
-    catalog_data, catalog = load_catalog()
     density_level = args.density
     variants = {}
     if args.config:
-        members, cfg_density, variants = resolve_from_config(args, catalog_data, catalog)
+        members, cfg_density, variants = resolve_from_config(args, load_catalog()[0], load_catalog()[1])
         density_level = density_level or cfg_density
     else:
         members = parse_members(args)
@@ -209,71 +257,25 @@ def main(argv=None) -> int:
             variants = {"S20": args.variant}
     density_level = density_level or "standard"
 
-    if len(members) > 3:
-        members = members[:3]
-    main_id = members[0][0]
-    if main_id not in catalog:
-        raise SystemExit(f"未知风格 id：{main_id}。可用：{', '.join(sorted(catalog))}")
-    for sid, _ in members[1:]:
-        if sid not in catalog:
-            raise SystemExit(f"未知风格 id：{sid}。可用：{', '.join(sorted(catalog))}")
-
-    metas = [catalog[sid] for sid, _ in members]
+    # parse_members 与 resolve_from_config 都已把权重写进 members，
+    # 只有用户显式传了 --weight-* 才覆盖。
     weights = [weight for _, weight in members]
-    total_weight = sum(weights)
-    shares = [weight / total_weight for weight in weights]
-    texts = [style_text(meta) for meta in metas]
+    if args.weight_main is not None:
+        weights[0] = args.weight_main
+    if args.weight_accent is not None:
+        weights = [weights[0]] + [args.weight_accent] * (len(members) - 1)
 
-    vector = {
-        key: round(weighted_average([meta["vector"][key] for meta in metas], weights), 1)
-        for key in DIMENSION_ORDER
-    }
-    factor = DENSITY_FACTOR[density_level]
-    low, high = density_range(metas, weights, factor)
-
-    is_blend = len(metas) > 1
-    active_ids = {meta["id"] for meta in metas}
-    applied_variants = {sid: value for sid, value in variants.items() if sid in active_ids}
-
+    payload = compose(members, weights, density_level, variants)
     if args.json:
-        payload = {
-            "mode": "blend" if is_blend else "single",
-            "density": density_level,
-            "density_multiplier": factor,
-            "density_range": [round(low, 2), round(high, 2)],
-            "members": [
-                {
-                    "id": meta["id"],
-                    "name": meta["name"],
-                    "role": "main" if index == 0 else "accent",
-                    "weight": weights[index],
-                    "share": round(shares[index], 3),
-                    "file": meta["file"],
-                }
-                for index, meta in enumerate(metas)
-            ],
-            "vector": vector,
-            "variants": applied_variants,
-            "conflicts": [
-                {"main": main_id, "accent": meta["id"]}
-                for meta in metas[1:]
-                if conflict_note(main_id, meta["id"], catalog_data)
-            ],
-            "prompt": build_prompt(
-                metas, weights, shares, texts, vector, low, high,
-                density_level, factor, catalog_data, applied_variants
-            ),
-        }
         print(json.dumps(payload, ensure_ascii=False, indent=2))
-        return 0
-
-    print(build_prompt(metas, weights, shares, texts, vector, low, high,
-                       density_level, factor, catalog_data, applied_variants))
+    else:
+        print(payload["prompt"])
     return 0
 
 
 def build_prompt(metas, weights, shares, texts, vector, low, high,
-                 density_level, factor, catalog_data, variants=None) -> str:
+                 density_level, factor, catalog_data, variants=None,
+                 dimension_order=None, dimension_labels=None) -> str:
     main_meta, main_text = metas[0], texts[0]
     accents = list(zip(metas[1:], texts[1:], shares[1:]))
     is_blend = bool(accents)
@@ -291,12 +293,14 @@ def build_prompt(metas, weights, shares, texts, vector, low, high,
         )
     lines.append("- 风格：" + "、".join(role_names))
     for sid, value in (variants or {}).items():
-        label = {"gentle": "温柔型", "strict": "严厉型"}.get(value, value)
+        label = VARIANT_LABEL.get(value, value)
         name = next((meta["name"] for meta in metas if meta["id"] == sid), sid)
         lines.append(f"- 子模式：{sid} {name} — {label}")
     lines.append(f"- 密度：{density_level}（×{factor:g}），参考 {format_range(low, high)} 次/百字")
+    order = dimension_order or []
+    labels = dimension_labels or {}
     vector_text = " / ".join(
-        f"{DIMENSION_LABELS[key]} {vector[key]:g}" for key in DIMENSION_ORDER
+        f"{labels.get(key, key)} {vector[key]:g}" for key in order
     )
     lines.append(f"- 融合向量：{vector_text}")
     lines.append("")
@@ -311,9 +315,11 @@ def build_prompt(metas, weights, shares, texts, vector, low, high,
     lines.append("")
 
     if is_blend:
+        main_share = shares[0] * 100
         lines.append("## 融合规则")
         lines.append("")
-        lines.append(f"1. 主风格 {metas[0]['id']}「{metas[0]['name']}」贯穿全文，约 70% 的词库与句式来自主风格。")
+        lines.append(f"1. 主风格 {metas[0]['id']}「{metas[0]['name']}」贯穿全文，"
+                     f"约 {main_share:.0f}% 的词库与句式来自主风格。")
         lines.append("2. 每个副风格只贡献 1 个签名元素；同一句话内不混搭两种腔调，按句交替。")
         lines.append("3. 先写出完整准确的答案，再套语气；删掉语气词后信息必须不变。")
         lines.append("4. 禁用词取并集；称呼与自称只用主风格的设定。")
