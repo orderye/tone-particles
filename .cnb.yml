@@ -1,0 +1,28 @@
+main:
+  push:
+    - stages:
+        - name: setup
+          script: python3 --version
+        - name: 风格与配置完整性
+          script: |
+            python3 - <<'PY'
+            import json, pathlib
+            root = pathlib.Path(".")
+            styles = json.loads((root / "config/styles.json").read_text(encoding="utf-8"))["styles"]
+            assert len(styles) == 21, len(styles)
+            for item in styles:
+                path = root / item["file"]
+                assert path.exists(), path
+                text = path.read_text(encoding="utf-8")
+                for field in ["定位", "词库", "签名元素", "颜文字"]:
+                    assert field in text, (path, field)
+            print("OK: 21 styles, configs valid")
+            PY
+        - name: 脚本自检
+          script: |
+            python3 scripts/pick_style.py config/user-config.example.json '[]' --simulate 1000 --seed 42 > /dev/null
+            python3 scripts/compose_prompt.py --main S09 --accent S04 --json > /dev/null
+            printf '哼，这种小问题还要我看吗……算了。第 8 行少了个括号，改完就能跑了。\n' \
+              | python3 scripts/check_density.py --style S09 > /dev/null
+        - name: 评测（确定性指标）
+          script: python3 eval/run.py --out eval/report.md

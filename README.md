@@ -1,6 +1,6 @@
 # 语气助词 Skill（tone-particles）
 
-版本 0.1.0 ｜ 对应 PRD v0.1 ｜ 21 种中文口吻风格
+版本 0.2.0 ｜ 对应 PRD v0.1 ｜ 21 种中文口吻风格
 
 仓库：[GitHub](https://github.com/orderye/tone-particles) ｜ [CNB 镜像](https://cnb.cool/toroyxxx/tone-particles) ｜ [Releases](https://github.com/orderye/tone-particles/releases)
 
@@ -15,6 +15,7 @@
 - **可复现的随机**：由脚本按权重与去重窗口抽样，模型只负责表达。
 - **可测试**：自带密度与硬规则检测脚本，另有一套端到端评测（`eval/`）。
 - **共享核心**：三个 CLI 共用 `scripts/_core.py`，配置、密度区间与抽样语义只有一处定义。
+- **可接入**：`integrations/` 提供宿主适配层，`mcp/` 提供 MCP 工具接口。
 
 ## 目录
 
@@ -45,7 +46,16 @@ tone-particles/
 │   ├── cases/               # 用例集
 │   ├── judge/               # 各指标判分器
 │   └── backends/            # 模型后端（可缺席）
-├── Docs/                    # PRD 与部署方案（不随包分发）
+├── integrations/            # 宿主接入包（不随包分发）
+│   ├── tone_core/           # 核心能力的 Python API
+│   ├── host_adapter.py      # 参考宿主适配器
+│   ├── host_cli.py          # JSON over stdio，给非 Python 宿主
+│   └── demo_loop.py         # 可跑的端到端演示
+├── mcp/                     # MCP 服务（不随包分发）
+│   ├── server.py            # JSON-RPC 2.0 over stdio
+│   ├── tools.py             # 四个工具
+│   └── tests/               # 自检
+├── Docs/                    # PRD 与接入指南（不随包分发）
 └── dist/                    # 打包好的 zip（不随包分发）
 ```
 
@@ -73,7 +83,7 @@ git clone https://github.com/orderye/tone-particles.git .skills/tone-particles
 git clone https://cnb.cool/toroyxxx/tone-particles.git ~/.skills/tone-particles
 ```
 
-也可以直接下载 Release 里的 `tone-particles-0.1.0.zip` 解压后放入 skills 目录。
+也可以直接下载 Release 里的 `tone-particles-0.2.0.zip` 解压后放入 skills 目录。
 
 手动复制的方式同样可用，在 `tone-particles` 的上一级目录执行：
 
@@ -87,7 +97,7 @@ mkdir -p ~/.skills && cp -R tone-particles ~/.skills/
 
 ### 支持 zip 导入的平台
 
-直接上传 `dist/tone-particles-0.1.0.zip`（zip 顶层是 `tone-particles/` 目录，`SKILL.md` 位于该目录内）。不同版本的 Skills 入口位置可能变化，以官方文档为准。
+直接上传 `dist/tone-particles-0.2.0.zip`（zip 顶层是 `tone-particles/` 目录，`SKILL.md` 位于该目录内）。不同版本的 Skills 入口位置可能变化，以官方文档为准。
 
 ### 任意对话应用（系统提示词注入）
 
@@ -109,9 +119,25 @@ history.append(out["members"][0]["id"])
 
 同一 `history` + `seed` 的结果可复现。随机由宿主控制，最稳定。
 
+上面是最小示例。仓库里的 `integrations/` 是一份更完整的参考实现：配置读写、
+按切换粒度选风格、维护历史、回填回复做密度回检都在里面。
+详见 [`Docs/宿主接入指南.md`](Docs/宿主接入指南.md)。
+
+```bash
+python3 integrations/demo_loop.py    # 端到端演示
+```
+
 ### 工具接口
 
-计划中（PRD 方案 C），当前版本未实现。
+MCP 服务（PRD 方案 C）已实现，暴露四个工具：`list_styles`、
+`get_style_prompt`、`set_user_style`、`pick_next_style`。零依赖，
+JSON-RPC 2.0 over stdio。
+
+```bash
+python3 mcp/server.py --config /path/to/user-config.json
+```
+
+注册方式与工具说明见 [`Docs/MCP接入指南.md`](Docs/MCP接入指南.md)。
 
 ## 首次使用
 
@@ -269,13 +295,14 @@ python3 eval/run.py
 
 ## 设计说明与已知限制
 
-- **风格提示词是参考实现**：向量与密度区间来自 PRD 初始设定，正式上线前应按 PRD M4 做盲测校准。
+- **风格提示词是参考实现**：向量与密度区间来自 PRD 初始设定，`eval/` 的盲测与密度标定就是为校准它们准备的——标定结果出来后应回写 `config/styles.json`。
 - **单风格体积**：每个风格文件约 650–900 汉字（含标点与颜文字约 1.1–1.4k 字符），符合 PRD 的 900 字目标——代价是保留了完整的分场景细则、示例与反例。若需进一步压缩，可删去「更多示例」与「反例」两节。
 - **随机与权重存在数学取舍**：要求「零连续重复」时，各风格的长期占比无法完全等于设定权重；池子不大于去重窗口时尤其明显。脚本会优先保证不连续重复，并在 `notes` 中说明。若更看重权重精确，把 `no_repeat_window` 设为 0。
 - **密度区间是趋势指标**：短回复的每百字密度天然偏高。PRD 附录里的参考示例多为 20–60 字短句，按本工具口径普遍高于标称区间；M4 标定时应以 150–400 字的完整回复重新取样。硬性验收应看「每句 ≤ 1 个主助词」「代码 / 表格内为零」等可判定规则。
 - **颜文字依赖字体**：不同平台显示不一致，默认关闭；出现乱码时按 `references/lexicon.md` 退回纯 ASCII。
 - **不改变内容**：本 skill 只改表达层，但不能替代事实核查与安全审查。
-- **系统提示词注入需要宿主开发**：`compose_prompt.py` 已提供拼装能力，调用时机、历史维护与缓存由宿主负责。
+- **系统提示词注入需要宿主开发**：`compose_prompt.py` 已提供拼装能力，调用时机、历史维护与缓存由宿主负责；`integrations/` 是可直接参考的完整实现。
+- **评测的三项指标依赖模型**：风格盲测、内容保真、融合识别需要评审模型；没有配置后端时这三项标为「未评测」，其余指标照常产出。
 
 ## 安全
 
@@ -283,5 +310,5 @@ python3 eval/run.py
 
 ## 版本
 
+- `0.2.0`：抽出共享核心 `scripts/_core.py`，三个 CLI 的配置、密度区间与抽样语义收敛到一处实现；补齐颜文字违规规则、关系位禁用词与密度档位校验；新增评测体系（`eval/`）、宿主适配层（`integrations/`）与 MCP 服务（`mcp/`）。对应 PRD M4–M6。
 - `0.1.0`：21 风格、四种模式、导入向导、融合 / 随机、场景自适应、颜文字、三个脚本。对应 PRD M1–M3。
-- 后续：M4 盲测与安全红队、M5 打包联调、M6 工具接口版。
