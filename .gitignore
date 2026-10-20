@@ -12,3 +12,7 @@ __pycache__/
 # 运行时生成的用户配置，不随仓库分发
 config/user-config.json
 config/tone-history.json
+
+# 评测时生成的一次性产物，可由脚本重新生成
+/eval/blind_sheet.md
+/eval/fixtures/judgments/*.json

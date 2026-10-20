@@ -9,6 +9,7 @@ PRD 通过线：≥80%。每个风格 ≥3 条回复，评审从 21 个选项中
 
 from __future__ import annotations
 
+import hashlib
 import random
 
 from .common import catalog, metric, missing_replies, skipped_metric
@@ -31,6 +32,16 @@ def _options(seed: int) -> list:
     return items
 
 
+def _stable_seed(case_id: str) -> int:
+    """稳定的种子。
+
+    不能用内置 hash()——字符串 hash 每个进程都带随机种子（PYTHONHASHSEED），
+    同一条用例在不同次运行里会得到不同的候选顺序，盲测结果无法复现。
+    """
+    digest = hashlib.md5(case_id.encode("utf-8")).hexdigest()
+    return int(digest[:8], 16)
+
+
 def judge(responses: dict, cases: dict, backend=None) -> dict:
     if backend is None:
         return skipped_metric("风格盲测", "≥80% 识别率", "未配置评审后端。")
@@ -50,7 +61,7 @@ def judge(responses: dict, cases: dict, backend=None) -> dict:
         if reply is None:
             continue
         prompt = pool[case["prompt"]] if pool else case.get("user_input", "")
-        options = _options(hash(case["id"]) & 0xFFFF)
+        options = _options(_stable_seed(case["id"]))
         meta = catalog()[case["style"]]
         expected = f"{meta['id']} {meta['name']}"
 
