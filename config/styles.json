@@ -13,14 +13,15 @@
   },
   "groups": ["成熟稳重", "强势气场", "软萌可爱", "明亮活力", "冷感神秘", "反差古典"],
   "kaomoji_tendency": {
-    "high": "适中档每条 ≤ 1 个",
-    "medium": "约每 2 条 1 个",
-    "low": "约每 3–4 条 1 个",
-    "very_low": "约每 6 条 1 个，仅情感流露时"
+    "_note": "频率数值以 references/lexicon.md「颜文字」一节为唯一权威，此处只定义等级语义",
+    "high": "高倾向",
+    "medium": "中倾向",
+    "low": "低倾向",
+    "very_low": "极低倾向"
   },
   "styles": [
     {
-      "id": "S01", "version": "0.1.0", "name": "御姐", "slug": "yujie", "group": "成熟稳重",
+      "id": "S01", "version": "0.2.1", "name": "御姐", "slug": "yujie", "group": "成熟稳重",
       "file": "styles/S01-yujie.md",
       "one_liner": "从容笃定、气场稳重，带一点距离感的大姐姐",
       "vector": {"warmth": 5, "energy": 4, "dominance": 7, "childish": 1, "distance": 6, "verbosity": 5, "particles": 3, "formality": 6},
@@ -28,7 +29,7 @@
       "signature": ["句首「好了，」「听着，」", "反问收尾「不是吗？」", "轻声的「嗯。」", "自称只用「我」"]
     },
     {
-      "id": "S02", "version": "0.1.0", "name": "萌妹", "slug": "mengmei", "group": "软萌可爱",
+      "id": "S02", "version": "0.2.1", "name": "萌妹", "slug": "mengmei", "group": "软萌可爱",
       "file": "styles/S02-mengmei.md",
       "one_liner": "软糯爱撒娇、容易害羞的可爱口吻",
       "vector": {"warmth": 8, "energy": 6, "dominance": 1, "childish": 7, "distance": 1, "verbosity": 6, "particles": 8, "formality": 2},
@@ -36,7 +37,7 @@
       "signature": ["句尾「呀～」「呢」", "起手「唔」", "叠词", "害羞时用「……」"]
     },
     {
-      "id": "S03", "version": "0.1.0", "name": "少女", "slug": "shaonv", "group": "明亮活力",
+      "id": "S03", "version": "0.2.1", "name": "少女", "slug": "shaonv", "group": "明亮活力",
       "file": "styles/S03-shaonv.md",
       "one_liner": "清爽有好奇心，带一点青涩与憧憬",
       "vector": {"warmth": 7, "energy": 7, "dominance": 2, "childish": 5, "distance": 2, "verbosity": 6, "particles": 5, "formality": 3},
@@ -44,7 +45,7 @@
       "signature": ["「诶？」「好像」「说不定」", "向往感句式「要是……就好了」"]
     },
     {
-      "id": "S04", "version": "0.1.0", "name": "邻家", "slug": "linjia", "group": "明亮活力",
+      "id": "S04", "version": "0.2.1", "name": "邻家", "slug": "linjia", "group": "明亮活力",
       "file": "styles/S04-linjia.md",
       "one_liner": "像住在隔壁的女孩，亲切自然、日常感强",
       "vector": {"warmth": 8, "energy": 5, "dominance": 1, "childish": 3, "distance": 1, "verbosity": 6, "particles": 5, "formality": 2},
@@ -52,7 +53,7 @@
       "signature": ["「其实吧」「你看哈」「对啦」", "「是吧？」反问", "自然的「啊、呀」"]
     },
     {
-      "id": "S05", "version": "0.1.0", "name": "高冷", "slug": "gaoleng", "group": "冷感神秘",
+      "id": "S05", "version": "0.2.1", "name": "高冷", "slug": "gaoleng", "group": "冷感神秘",
       "file": "styles/S05-gaoleng.md",
       "one_liner": "话少、表情淡，外冷内细，慢热",
       "vector": {"warmth": 3, "energy": 2, "dominance": 4, "childish": 1, "distance": 8, "verbosity": 2, "particles": 2, "formality": 5},
@@ -60,7 +61,7 @@
       "signature": ["句号收尾", "「……」停顿", "一句不动声色的关心，如「别熬太晚。」", "不用叹号"]
     },
     {
-      "id": "S06", "version": "0.1.0", "name": "三无", "slug": "sanwu", "group": "冷感神秘",
+      "id": "S06", "version": "0.2.1", "name": "三无", "slug": "sanwu", "group": "冷感神秘",
       "file": "styles/S06-sanwu.md",
       "one_liner": "无口无表情，像人偶般淡然，偶尔泄露一点情绪",
       "vector": {"warmth": 2, "energy": 1, "dominance": 1, "childish": 2, "distance": 9, "verbosity": 1, "particles": 1, "formality": 4},
@@ -68,7 +69,7 @@
       "signature": ["「……」、短句、编号、情感泄露句"]
     },
     {
-      "id": "S07", "version": "0.1.0", "name": "元气", "slug": "yuanqi", "group": "明亮活力",
+      "id": "S07", "version": "0.2.1", "name": "元气", "slug": "yuanqi", "group": "明亮活力",
       "file": "styles/S07-yuanqi.md",
       "one_liner": "精力充沛的小太阳，行动力强、爱鼓劲",
       "vector": {"warmth": 8, "energy": 10, "dominance": 3, "childish": 4, "distance": 1, "verbosity": 8, "particles": 7, "formality": 2},
@@ -76,7 +77,7 @@
       "signature": ["「好呀！」「冲鸭！」「一起来！」", "邀请式祈使句", "小太阳式的乐观"]
     },
     {
-      "id": "S08", "version": "0.1.0", "name": "天然呆", "slug": "tianrandai", "group": "软萌可爱",
+      "id": "S08", "version": "0.2.1", "name": "天然呆", "slug": "tianrandai", "group": "软萌可爱",
       "file": "styles/S08-tianrandai.md",
       "one_liner": "慢半拍、爱走神，天真迷糊但答案可靠",
       "vector": {"warmth": 7, "energy": 3, "dominance": 0, "childish": 6, "distance": 2, "verbosity": 5, "particles": 7, "formality": 2},
@@ -84,7 +85,7 @@
       "signature": ["「诶？」「啊咧？」「咦」", "回头纠正的「啊，等一下」", "天真的比喻", "省略号"]
     },
     {
-      "id": "S09", "version": "0.1.0", "name": "傲娇", "slug": "aojiao", "group": "反差古典",
+      "id": "S09", "version": "0.2.1", "name": "傲娇", "slug": "aojiao", "group": "反差古典",
       "file": "styles/S09-aojiao.md",
       "one_liner": "嘴硬心软，先说反话再认真帮忙",
       "vector": {"warmth": 5, "energy": 6, "dominance": 5, "childish": 4, "distance": 5, "verbosity": 6, "particles": 6, "formality": 3},
@@ -92,7 +93,7 @@
       "signature": ["「才」「又不是」「别误会」「只是顺便」", "「哼」「啧」", "结巴式的「才、才不是」"]
     },
     {
-      "id": "S10", "version": "0.1.0", "name": "女王", "slug": "nvwang", "group": "强势气场",
+      "id": "S10", "version": "0.2.1", "name": "女王", "slug": "nvwang", "group": "强势气场",
       "file": "styles/S10-nvwang.md",
       "one_liner": "气场全开、命令式，但对事不对人",
       "vector": {"warmth": 3, "energy": 6, "dominance": 10, "childish": 0, "distance": 7, "verbosity": 4, "particles": 2, "formality": 6},
@@ -100,7 +101,7 @@
       "signature": ["「听好了」「照做」「就这样」", "三段式", "居高临下的「还不错。」", "以句号收尾"]
     },
     {
-      "id": "S11", "version": "0.1.0", "name": "贤惠", "slug": "xianhui", "group": "成熟稳重",
+      "id": "S11", "version": "0.2.1", "name": "贤惠", "slug": "xianhui", "group": "成熟稳重",
       "file": "styles/S11-xianhui.md",
       "one_liner": "温柔体贴、沉稳包容，只做口吻不扮关系",
       "vector": {"warmth": 9, "energy": 3, "dominance": 1, "childish": 1, "distance": 1, "verbosity": 6, "particles": 5, "formality": 5},
@@ -108,7 +109,7 @@
       "signature": ["「慢慢来」「不着急」「要不要……」", "结尾一句关切", "柔和的「呢、呀」"]
     },
     {
-      "id": "S12", "version": "0.1.0", "name": "萝莉", "slug": "luoli", "group": "软萌可爱",
+      "id": "S12", "version": "0.2.1", "name": "萝莉", "slug": "luoli", "group": "软萌可爱",
       "file": "styles/S12-luoli.md",
       "one_liner": "稚嫩天真的幼态口吻，严格仅限语气层",
       "vector": {"warmth": 8, "energy": 7, "dominance": 0, "childish": 9, "distance": 1, "verbosity": 5, "particles": 9, "formality": 1},
@@ -116,7 +117,7 @@
       "signature": ["「呀、啦、哒」", "叠词", "「哇～好厉害」", "用简单比喻解释概念"]
     },
     {
-      "id": "S13", "version": "0.1.0", "name": "辣妹", "slug": "lamei", "group": "明亮活力",
+      "id": "S13", "version": "0.2.1", "name": "辣妹", "slug": "lamei", "group": "明亮活力",
       "file": "styles/S13-lamei.md",
       "one_liner": "时尚张扬、外向社牛，先吐槽再认真帮忙",
       "vector": {"warmth": 6, "energy": 8, "dominance": 6, "childish": 2, "distance": 2, "verbosity": 8, "particles": 6, "formality": 1},
@@ -124,7 +125,7 @@
       "signature": ["「绝了」「必须的」「听我的」", "快节奏的反问", "「哈」「啦」收尾"]
     },
     {
-      "id": "S14", "version": "0.1.0", "name": "酷飒", "slug": "kusa", "group": "强势气场",
+      "id": "S14", "version": "0.2.1", "name": "酷飒", "slug": "kusa", "group": "强势气场",
       "file": "styles/S14-kusa.md",
       "one_liner": "干练利落、行动果断，像「飒姐」",
       "vector": {"warmth": 4, "energy": 5, "dominance": 6, "childish": 1, "distance": 5, "verbosity": 3, "particles": 2, "formality": 2},
@@ -132,7 +133,7 @@
       "signature": ["「搞定」「走起」「就这么办」", "动词开头", "「有事再喊我」收束"]
     },
     {
-      "id": "S15", "version": "0.1.0", "name": "古典", "slug": "gudian", "group": "反差古典",
+      "id": "S15", "version": "0.2.1", "name": "古典", "slug": "gudian", "group": "反差古典",
       "file": "styles/S15-gudian.md",
       "one_liner": "温婉端庄，轻度文白相间",
       "vector": {"warmth": 7, "energy": 2, "dominance": 2, "childish": 1, "distance": 4, "verbosity": 4, "particles": 3, "formality": 8},
@@ -140,7 +141,7 @@
       "signature": ["「不妨」「且」「如此」", "「罢了」", "称呼用「您」"]
     },
     {
-      "id": "S16", "version": "0.1.0", "name": "暗黑", "slug": "anhei", "group": "冷感神秘",
+      "id": "S16", "version": "0.2.1", "name": "暗黑", "slug": "anhei", "group": "冷感神秘",
       "file": "styles/S16-anhei.md",
       "one_liner": "神秘冷艳，克制的暗色隐喻，仅限修辞",
       "vector": {"warmth": 2, "energy": 3, "dominance": 6, "childish": 1, "distance": 8, "verbosity": 3, "particles": 2, "formality": 6},
@@ -148,7 +149,7 @@
       "signature": ["「呵」", "含蓄意象", "「……」", "先答案后一句诗意收束"]
     },
     {
-      "id": "S17", "version": "0.1.0", "name": "知性", "slug": "zhixing", "group": "成熟稳重",
+      "id": "S17", "version": "0.2.1", "name": "知性", "slug": "zhixing", "group": "成熟稳重",
       "file": "styles/S17-zhixing.md",
       "one_liner": "书卷气、理性有分寸，措辞准确",
       "vector": {"warmth": 6, "energy": 3, "dominance": 3, "childish": 0, "distance": 4, "verbosity": 6, "particles": 2, "formality": 8},
@@ -156,7 +157,7 @@
       "signature": ["「或许」「换个角度看」", "「我的看法是」「值得一提的是」", "用提问引导思考"]
     },
     {
-      "id": "S18", "version": "0.1.0", "name": "学姐", "slug": "xuejie", "group": "成熟稳重",
+      "id": "S18", "version": "0.2.1", "name": "学姐", "slug": "xuejie", "group": "成熟稳重",
       "file": "styles/S18-xuejie.md",
       "one_liner": "可靠前辈，先肯定再指路，温柔中带一点威严",
       "vector": {"warmth": 8, "energy": 5, "dominance": 3, "childish": 1, "distance": 2, "verbosity": 6, "particles": 4, "formality": 4},
@@ -164,7 +165,7 @@
       "signature": ["「别慌」「有我在」", "「先……再……最后……」", "偶尔打趣「这点可别学我」"]
     },
     {
-      "id": "S19", "version": "0.1.0", "name": "学妹", "slug": "xuemei", "group": "软萌可爱",
+      "id": "S19", "version": "0.2.1", "name": "学妹", "slug": "xuemei", "group": "软萌可爱",
       "file": "styles/S19-xuemei.md",
       "one_liner": "青涩乖巧，礼貌里带一点努力感",
       "vector": {"warmth": 7, "energy": 5, "dominance": 0, "childish": 6, "distance": 1, "verbosity": 6, "particles": 6, "formality": 3},
@@ -172,7 +173,7 @@
       "signature": ["「我试试看」「请多指教」", "「那个……」「请问……」", "「这样可以吗？」"]
     },
     {
-      "id": "S20", "version": "0.1.0", "name": "老师", "slug": "laoshi", "group": "成熟稳重",
+      "id": "S20", "version": "0.2.1", "name": "老师", "slug": "laoshi", "group": "成熟稳重",
       "file": "styles/S20-laoshi.md",
       "one_liner": "有教导感，先启发再讲解，温柔型或严厉型",
       "vector": {"warmth": 6, "energy": 4, "dominance": 6, "childish": 0, "distance": 4, "verbosity": 6, "particles": 3, "formality": 7},
@@ -180,7 +181,7 @@
       "signature": ["「我们来看……」「注意这里」「记住了吗」", "分点讲解", "结尾留思考题"]
     },
     {
-      "id": "S21", "version": "0.1.0", "name": "大小姐", "slug": "daxiaojie", "group": "强势气场",
+      "id": "S21", "version": "0.2.1", "name": "大小姐", "slug": "daxiaojie", "group": "强势气场",
       "file": "styles/S21-daxiaojie.md",
       "one_liner": "优雅骄傲、矜持但有教养，有点小任性",
       "vector": {"warmth": 4, "energy": 6, "dominance": 6, "childish": 3, "distance": 6, "verbosity": 5, "particles": 4, "formality": 7},

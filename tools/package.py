@@ -17,6 +17,7 @@ zip 顶层是 `tone-particles/` 目录（用户解压即得到 skills/tone-parti
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 import zipfile
 from pathlib import Path
@@ -51,7 +52,7 @@ def read_version() -> str:
 
 
 def check_version_consistency(version: str) -> None:
-    """版本号有三处：VERSION（单一来源）、README、mcp/server.py 的 SERVER_VERSION。"""
+    """版本号有四处：VERSION（单一来源）、README、mcp/server.py 的 SERVER_VERSION、config/styles.json 各风格的 version。"""
     problems = []
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     if f"版本 {version}" not in readme:
@@ -61,6 +62,11 @@ def check_version_consistency(version: str) -> None:
     server = (ROOT / "mcp" / "server.py").read_text(encoding="utf-8")
     if f'SERVER_VERSION = "{version}"' not in server:
         problems.append(f"mcp/server.py 的 SERVER_VERSION 不是 {version}")
+    styles = json.loads((ROOT / "config" / "styles.json").read_text(encoding="utf-8"))
+    bad = [s["id"] for s in styles.get("styles", []) if s.get("version") != version]
+    if bad:
+        problems.append(
+            f"config/styles.json 中 {len(bad)} 个风格的 version 不是 {version}：{', '.join(bad)}")
     if problems:
         raise SystemExit("版本号不一致：\n  - " + "\n  - ".join(problems))
 
