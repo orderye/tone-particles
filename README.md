@@ -1,6 +1,6 @@
 # 语气助词 Skill（tone-particles）
 
-版本 0.3.5 ｜ 对应 PRD v0.1 ｜ 21 种中文口吻风格
+版本 0.4.0 ｜ 对应 PRD v0.1 ｜ 21 种中文口吻风格
 
 仓库：[GitHub](https://github.com/orderye/tone-particles) ｜ [CNB 镜像](https://cnb.cool/toroyxxx/tone-particles) ｜ [Releases](https://github.com/orderye/tone-particles/releases)
 
@@ -65,7 +65,9 @@ tone-particles/
 ├── Docs/                    # PRD 与接入指南（不随包分发）
 │   ├── 宿主接入指南.md
 │   ├── MCP接入指南.md
-│   └── 语境策略与场景优先级.md
+│   ├── 语境策略与场景优先级.md
+│   ├── 发布检查清单.md
+│   └── 配置升级与故障诊断.md
 └── VERSION                  # 版本单一来源（不随包分发）
 ```
 
@@ -93,7 +95,7 @@ git clone https://github.com/orderye/tone-particles.git .skills/tone-particles
 git clone https://cnb.cool/toroyxxx/tone-particles.git ~/.skills/tone-particles
 ```
 
-也可以直接下载 Release 里的 `tone-particles-0.3.5.zip` 解压后放入 skills 目录。
+也可以直接下载 Release 里的 `tone-particles-0.4.0.zip` 解压后放入 skills 目录。
 
 手动复制的方式同样可用，在 `tone-particles` 的上一级目录执行：
 
@@ -107,9 +109,22 @@ mkdir -p ~/.skills && cp -R tone-particles ~/.skills/
 
 ### 支持 zip 导入的平台
 
-从 [Releases](https://github.com/orderye/tone-particles/releases) 下载 `tone-particles-0.3.5.zip` 后上传（zip 顶层是 `tone-particles/` 目录，`SKILL.md` 位于该目录内）。不同版本的 Skills 入口位置可能变化，以官方文档为准。
+从 [Releases](https://github.com/orderye/tone-particles/releases) 下载 `tone-particles-0.4.0.zip` 后上传（zip 顶层是 `tone-particles/` 目录，`SKILL.md` 位于该目录内）。不同版本的 Skills 入口位置可能变化，以官方文档为准。
 
 维护者重建分发包用 `python3 tools/package.py`：白名单构建（只含 README、SKILL.md、config、references、scripts、styles）、顶层固定 `tone-particles/`、条目排序与固定时间戳保证同样内容产出字节一致的包；版本号读根目录 `VERSION`，并校验 README 与 `mcp/server.py` 的版本串一致。
+
+`python3 tools/package.py --verify` 做供应链校验：连续两次构建的 SHA-256 是否一致、zip 条目有没有路径穿越 / 绝对路径 / 重复条目、必需文件是否齐全、私有与开发文件（用户配置、历史、锁文件、`eval/`、`tests/`、`tools/`、`dist/`）有没有漏进包里、包内有没有机器路径或密钥形态的内容，以及**解压到临时目录后跑一遍最小使用流程**。通过后会在 `dist/` 里写出内容清单（`tone-particles-<版本>.manifest.json`）与 SHA-256 校验和文件。
+
+版本号改一次就好：`python3 tools/version.py --set 0.4.0` 会同步 `VERSION`、README 的版本行与包名、`mcp/server.py` 的 `SERVER_VERSION`、`config/styles.json` 里 21 个风格的 `version`。`python3 tools/version.py --check` 与 `tools/package.py --check` 都会校验它们一致——自检里也带这一项。
+
+### 持续集成
+
+两条流水线跑同一份检查清单（`.github/workflows/eval.yml` 与 `.cnb.yml`）：
+
+- 平台：Linux + macOS；Python：3.9（项目实际最低版本）+ 3.12。**没有 Windows CI，因此不声明 Windows 支持。**
+- 检查项：版本一致性 → 配置与 schema 校验 → 自检 → 核心 / 宿主 / MCP / 配置读写 / 安全 / 协议契约 / 评测 / 语境八个测试文件 → CLI 冒烟 → 离线确定性评测 → 评测报告汇总 → 打包供应链校验。
+- 默认流水线**不需要任何密钥、不调用付费模型**。需要模型的评审是独立的 `model-eval` job，只有手动触发（`workflow_dispatch`）并选了非 `none` 的后端才跑，密钥只从 CI secret 读。
+- 阻断规则：硬规则、安全红队、配置读写、协议契约、打包完整性任一失败即失败。评测里「未评测」的项**不阻断**普通 CI，但会逐条打印——发布候选验收要用 `python3 eval/run.py --strict`，它会在模型类指标未评测时返回退出码 2。
 
 ### 任意对话应用（系统提示词注入）
 
@@ -354,6 +369,7 @@ python3 tests/test_eval.py      # 评测体系：状态语义、严格模式、�
 
 ## 版本
 
+- `0.4.0`：CI 扩成矩阵（Linux + macOS × Python 3.9 / 3.12），覆盖版本一致性、配置与 schema 校验、自检、八个测试文件、CLI 冒烟、离线确定性评测与打包供应链校验；需要模型的评审拆成独立的、只有手动触发才跑的 job，默认流水线不需要任何密钥；`tools/package.py` 新增 `--verify`（双构建哈希一致性、内容清单、路径安全、私有文件扫描、解压后最小安装、SHA-256 清单）；新增 `tools/version.py` 统一版本号；新增 `Docs/发布检查清单.md` 与 `Docs/配置升级与故障诊断.md`。
 - `0.3.5`：新增确定性语境策略 `scripts/_context.py`——按可审计的文本规则判断场景（代码 / 表格 / 高风险 / 正式写作 / 报错排查 / 情绪低落 / 非中文 / 危机），带 reason code 与可解释理由；危机硬规则不可被配置或宿主元数据关闭，且不抽样、不写历史；宿主适配层与 MCP `get_style_prompt` 新增可选 `context` 参数（向后兼容，旧调用方式不变）；新增 `Docs/语境策略与场景优先级.md` 与 `tests/test_context.py`。
 - `0.3.0`：评测引入「通过 / 未达标 / 未评测 / 被阻塞」四种状态并新增 `--strict` 严格验收开关；报告补上仓库版本、Git commit、Python 版本、评测数据哈希、后端元信息与分母定义；新增确定性的「语义锚点保真」指标与用例结构校验 `eval/validate_cases.py`；评审通道出错不再被算成「目标回复失败」；后端超时与重试上限可配。
 - `0.2.2`：配置写入改为原子写 + 跨进程锁 + 写前写后校验，杜绝并发写坏配置与「写入失败却返回成功」；MCP 增加 schema 驱动的参数校验、工具执行异常不再拖垮服务；宿主适配层改为「提示词拼装成功后才提交轮次状态」；新增 `user_dir` / `TONE_PARTICLES_USER_DIR` 隔离多用户配置与历史；新增 `tests/test_config.py`、`tests/test_protocol.py`、`tests/test_safety.py` 与 `tools/version.py`（版本号同步）。

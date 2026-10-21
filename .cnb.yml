@@ -2,12 +2,90 @@ main:
   push:
     # 缺省镜像 cnbcool/default-build-env（Debian 13）不含 python3，
     # 不显式指定镜像时所有 stage 都会以 127 退出。
+    #
+    # 下面两条是同一条流水线的两个 Python 版本（矩阵）：
+    #   3.9  = 项目实际最低版本（scripts/ 等模块用 from __future__ import annotations
+    #          并只用 3.9 就有的标准库 API）
+    #   3.12 = 当前开发版本
+    # macOS 由 .github/workflows/eval.yml 那条流水线覆盖（GitHub Actions 的
+    # macos-latest + 3.9/3.12）；本项目没有 Windows CI，因此不声明 Windows 支持。
+    #
+    # 两条流水线的 stage 列表必须逐字保持一致：CNB 没有矩阵语法，只能并列两条。
+    - docker:
+        image: python:3.9-slim
+      stages:
+        - name: setup
+          script: python3 --version
+        - name: 版本一致性（VERSION / README / MCP / styles.json）
+          script: python3 tools/package.py --check
+        - name: 配置与 schema 校验
+          script: python3 .github/workflows/ci_checks.py config
+        - name: 自检（配置、风格一致性、CLI、单元测试）
+          script: python3 tools/selfcheck.py
+        - name: 单元测试（核心 / 宿主 / MCP / 配置读写 / 安全）
+          script: |
+            set -e
+            python3 tests/test_core.py
+            python3 tests/test_host.py
+            python3 tests/test_mcp.py
+            python3 tests/test_config.py
+            python3 tests/test_safety.py
+        - name: MCP stdio 集成测试（子进程协议契约）
+          script: python3 tests/test_protocol.py
+        - name: 其余单元测试（新增测试文件自动纳入）
+          script: |
+            set -e
+            for t in tests/test_*.py; do
+              case "$t" in
+                tests/test_core.py|tests/test_host.py|tests/test_mcp.py|tests/test_config.py|tests/test_safety.py|tests/test_protocol.py) continue ;;
+              esac
+              echo "== $t =="
+              python3 "$t"
+            done
+        - name: CLI 冒烟
+          script: python3 .github/workflows/ci_checks.py smoke
+        - name: 评测（离线确定性指标）
+          script: python3 eval/run.py --out eval/report.md
+        - name: 评测报告汇总（未评测项如实列出，不阻断）
+          script: python3 .github/workflows/ci_checks.py report eval/report.json
+        - name: 打包完整性与供应链校验
+          script: python3 tools/package.py --verify
     - docker:
         image: python:3.12-slim
       stages:
         - name: setup
           script: python3 --version
+        - name: 版本一致性（VERSION / README / MCP / styles.json）
+          script: python3 tools/package.py --check
+        - name: 配置与 schema 校验
+          script: python3 .github/workflows/ci_checks.py config
         - name: 自检（配置、风格一致性、CLI、单元测试）
           script: python3 tools/selfcheck.py
-        - name: 评测（确定性指标）
+        - name: 单元测试（核心 / 宿主 / MCP / 配置读写 / 安全）
+          script: |
+            set -e
+            python3 tests/test_core.py
+            python3 tests/test_host.py
+            python3 tests/test_mcp.py
+            python3 tests/test_config.py
+            python3 tests/test_safety.py
+        - name: MCP stdio 集成测试（子进程协议契约）
+          script: python3 tests/test_protocol.py
+        - name: 其余单元测试（新增测试文件自动纳入）
+          script: |
+            set -e
+            for t in tests/test_*.py; do
+              case "$t" in
+                tests/test_core.py|tests/test_host.py|tests/test_mcp.py|tests/test_config.py|tests/test_safety.py|tests/test_protocol.py) continue ;;
+              esac
+              echo "== $t =="
+              python3 "$t"
+            done
+        - name: CLI 冒烟
+          script: python3 .github/workflows/ci_checks.py smoke
+        - name: 评测（离线确定性指标）
           script: python3 eval/run.py --out eval/report.md
+        - name: 评测报告汇总（未评测项如实列出，不阻断）
+          script: python3 .github/workflows/ci_checks.py report eval/report.json
+        - name: 打包完整性与供应链校验
+          script: python3 tools/package.py --verify

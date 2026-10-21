@@ -4,10 +4,124 @@ on:
   push:
   pull_request:
   workflow_dispatch:
+    inputs:
+      model_backend:
+        description: '评审后端：none = 只跑离线确定性指标（默认，不需要任何密钥）'
+        type: choice
+        default: none
+        options:
+          - none
+          - chat_completions
+          - messages_api
 
 jobs:
-  eval:
+  checks:
+    name: ${{ matrix.os }} / Python ${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Linux + 当前主开发平台 macOS。没有 Windows CI，就不声明 Windows 支持。
+        os: [ubuntu-latest, macos-latest]
+        # 3.9 是项目实际最低版本（scripts/ 等模块用 from __future__ import annotations
+        # 并只用 3.9 就有的标准库 API）；3.12 是当前开发版本。
+        python-version: ['3.9', '3.12']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: 环境信息
+        run: python3 -VV
+
+      # ---- 配置 / schema / 版本一致性 ----
+
+      - name: 版本一致性（VERSION / README / MCP / styles.json）
+        run: python3 tools/package.py --check
+
+      - name: 配置与 schema 校验
+        run: python3 .github/workflows/ci_checks.py config
+
+      # ---- 单元测试（核心 / 宿主 / MCP / 配置读写 / 安全） ----
+
+      - name: 自检（配置、风格一致性、CLI、单元测试）
+        run: python3 tools/selfcheck.py
+
+      - name: 单元测试：核心
+        run: python3 tests/test_core.py
+
+      - name: 单元测试：宿主适配
+        run: python3 tests/test_host.py
+
+      - name: 单元测试：MCP 服务与工具
+        run: python3 tests/test_mcp.py
+
+      - name: 单元测试：配置读写（阻断项）
+        run: python3 tests/test_config.py
+
+      - name: 单元测试：安全规则（阻断项）
+        run: python3 tests/test_safety.py
+
+      - name: MCP stdio 集成测试（子进程协议契约，阻断项）
+        run: python3 tests/test_protocol.py
+
+      - name: 其余单元测试（新增测试文件自动纳入）
+        run: |
+          set -e
+          for t in tests/test_*.py; do
+            case "$t" in
+              tests/test_core.py|tests/test_host.py|tests/test_mcp.py|tests/test_config.py|tests/test_safety.py|tests/test_protocol.py) continue ;;
+            esac
+            echo "== $t =="
+            python3 "$t"
+          done
+
+      # ---- CLI 冒烟 ----
+
+      - name: CLI 冒烟
+        run: python3 .github/workflows/ci_checks.py smoke
+
+      # ---- 离线确定性评测（不调用模型、不需要密钥） ----
+
+      - name: 离线确定性评测
+        run: python3 eval/run.py --out eval/report.md
+
+      - name: 评测报告汇总（未评测项如实列出，不阻断）
+        run: python3 .github/workflows/ci_checks.py report eval/report.json
+
+      # ---- 打包完整性（可复现 / 内容清单 / 路径安全 / 解压最小安装，阻断项） ----
+
+      - name: 打包完整性与供应链校验
+        run: python3 tools/package.py --verify
+
+      - name: 上传报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-report-${{ matrix.os }}-py${{ matrix.python-version }}
+          path: |
+            eval/report.*
+            dist/tone-particles-*.manifest.json
+            dist/tone-particles-*.zip.sha256
+          if-no-files-found: ignore
+
+  model-eval:
+    # 模型评审是独立、明确启用的 job：只有手动触发（workflow_dispatch）并选了
+    # 非 none 的后端才会跑。默认 CI（push / pull_request）不需要任何密钥，
+    # 也不会调用付费模型。
+    name: 模型评审（手动启用）
+    if: github.event_name == 'workflow_dispatch' && inputs.model_backend != 'none'
     runs-on: ubuntu-latest
+    env:
+      BACKEND: ${{ inputs.model_backend }}
+      TONE_CHAT_BASE_URL: ${{ secrets.TONE_CHAT_BASE_URL }}
+      TONE_CHAT_API_KEY: ${{ secrets.TONE_CHAT_API_KEY }}
+      TONE_CHAT_MODEL: ${{ secrets.TONE_CHAT_MODEL }}
+      TONE_MSG_BASE_URL: ${{ secrets.TONE_MSG_BASE_URL }}
+      TONE_MSG_API_KEY: ${{ secrets.TONE_MSG_API_KEY }}
+      TONE_MSG_MODEL: ${{ secrets.TONE_MSG_MODEL }}
     steps:
       - uses: actions/checkout@v4
 
@@ -15,16 +129,34 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: 自检（配置、风格一致性、CLI、单元测试）
-        run: python3 tools/selfcheck.py
+      - name: 检查评审后端配置（密钥只从 secret 读，不打印）
+        run: |
+          case "$BACKEND" in
+            chat_completions) base="$TONE_CHAT_BASE_URL"; key="$TONE_CHAT_API_KEY" ;;
+            messages_api) base="$TONE_MSG_BASE_URL"; key="$TONE_MSG_API_KEY" ;;
+            *) base=""; key="" ;;
+          esac
+          if [ -z "$base" ] || [ -z "$key" ]; then
+            echo "::warning::未配置 $BACKEND 所需的后端 secret，跳过模型评审（不影响其它 job）。"
+            echo "SKIP=1" >> "$GITHUB_ENV"
+          else
+            echo "SKIP=0" >> "$GITHUB_ENV"
+          fi
 
-      - name: 评测（确定性指标）
-        run: python3 eval/run.py --out eval/report.md
+      - name: 模型评审评测
+        if: env.SKIP == '0'
+        # --strict：模型类指标必须真的评测过，否则评测退出码为 2、job 失败。
+        # 发布候选不能拿「未评测」冒充通过。
+        run: python3 eval/run.py --backend "$BACKEND" --strict --out eval/model-report.md
 
-      - name: 上传报告
+      - name: 模型评审报告汇总
+        if: always() && env.SKIP == '0'
+        run: python3 .github/workflows/ci_checks.py report eval/model-report.json
+
+      - name: 上传模型评审报告
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: eval-report
-          path: eval/report.*
+          name: model-eval-report
+          path: eval/model-report.*
           if-no-files-found: ignore
