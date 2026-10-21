@@ -25,6 +25,7 @@ if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
 import _core  # noqa: E402
+import _context  # noqa: E402
 import check_density  # noqa: E402
 
 from _core import (  # noqa: E402,F401
@@ -64,8 +65,16 @@ from _core import (  # noqa: E402,F401
 )
 from compose_prompt import compose  # noqa: E402,F401
 
+# 语境策略的对外入口。宿主可以直接传显式场景，也可以用默认的自动检测。
+resolve_context = _context.resolve
+detect_context = _context.detect
+CONTEXT_SCENES = _context.SCENES
+EXPLICIT_CONTEXT_SCENES = _context.EXPLICIT_SCENES
+
 __all__ = [
     "CONFIG_KEYS",
+    "CONTEXT_SCENES",
+    "EXPLICIT_CONTEXT_SCENES",
     "GRANULARITIES",
     "MODES",
     "SKILL_ROOT",
@@ -80,6 +89,7 @@ __all__ = [
     "conflict_note",
     "density_factor",
     "density_range",
+    "detect_context",
     "enrich",
     "extract_kaomoji_library",
     "format_range",
@@ -93,6 +103,7 @@ __all__ = [
     "normalize_config",
     "parse_style_sections",
     "pick",
+    "resolve_context",
     "save_config",
     "save_history",
     "set_resource_root",

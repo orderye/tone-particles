@@ -19,6 +19,7 @@ if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
 import _core  # noqa: E402
+import _context  # noqa: E402
 import compose_prompt  # noqa: E402
 
 
@@ -54,8 +55,13 @@ class Tools:
             data, index, group=group, include_prompt=bool(include_prompt))
         return {"groups": data.get("groups", []), "count": len(items), "styles": items}
 
-    def get_style_prompt(self, style_id, accents=None, weights=None, density=None, variant=None):
-        """生成单一或融合风格的提示词。"""
+    def get_style_prompt(self, style_id, accents=None, weights=None, density=None,
+                         variant=None, context=None):
+        """生成单一或融合风格的提示词。
+
+        context 是可选的结构化元数据（{"scene": "code"} 之类），用来覆盖语境
+        策略的自动检测；不给就按传入的风格正常生成。
+        """
         ids = [str(style_id).upper()]
         ids.extend(str(accent).upper() for accent in (accents or []))
         if weights:
@@ -67,7 +73,11 @@ class Tools:
             weights = None
         members = [(sid, 1) for sid in ids]
         variants = {"S20": variant} if variant else None
-        return compose_prompt.compose(members, weights, density or "standard", variants)
+        decision = None
+        if context:
+            decision = _context.resolve("", explicit=context)
+        level = density or (decision or {}).get("density_level") or "standard"
+        return compose_prompt.compose(members, weights, level, variants, decision)
 
     def set_user_style(self, **patch):
         """写入用户配置。未知键报错；值为 None 表示不改动。
@@ -109,6 +119,7 @@ DISPATCH = {
         weights=args.get("weights"),
         density=args.get("density"),
         variant=args.get("variant"),
+        context=args.get("context"),
     ),
     "set_user_style": lambda tools, args: tools.set_user_style(
         **{key: value for key, value in args.items()}

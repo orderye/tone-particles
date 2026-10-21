@@ -17,6 +17,7 @@ if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
 import _core  # noqa: E402
+import _context  # noqa: E402
 
 STYLE_ID = {"type": "string", "description": "风格 id，如 S09。共 21 个。"}
 STYLE_ID_LIST = {
@@ -65,6 +66,19 @@ GET_STYLE_PROMPT = {
             "type": "string",
             "enum": ["gentle", "strict"],
             "description": "老师风格（S20）的子模式：gentle 温柔型 / strict 严厉型。",
+        },
+        "context": {
+            "type": "object",
+            "description": "可选的语境元数据，覆盖语境策略的自动检测。",
+            "properties": {
+                "scene": {
+                    "type": "string",
+                    "enum": sorted(_context.EXPLICIT_SCENES),
+                    "description": "任务场景：闲聊 / 知识解释 / 代码排障 / 正式写作 / "
+                                   "结构化输出 / 高风险 / 情绪低落 / 报错排查 / 非中文。",
+                },
+            },
+            "additionalProperties": False,
         },
     },
     "required": ["style_id"],

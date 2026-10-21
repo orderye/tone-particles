@@ -34,6 +34,7 @@ def handle(host: ToneHost, request: dict) -> dict:
             request.get("user_input", ""),
             topic=request.get("topic"),
             density=request.get("density"),
+            context=request.get("context"),
         )
     if op == "observe":
         return host.observe(

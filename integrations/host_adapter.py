@@ -28,6 +28,7 @@ from tone_core import (  # noqa: E402
     load_config,
     load_json,
     members_with_weights,
+    resolve_context,
     save_config,
     save_history,
     set_resource_root,
@@ -96,16 +97,41 @@ class ToneHost:
 
     # -- 每轮 -----------------------------------------------------------
 
-    def next_turn(self, user_input: str, topic=None, density=None) -> dict:
+    def next_turn(self, user_input: str, topic=None, density=None, context=None) -> dict:
         """本轮要注入的 system 后缀。
 
         返回 {"active", "system_suffix", "style", "members", "density_range", "notes"}。
-        `active` 为 False 时语气已暂停，system_suffix 为空串。
+        `active` 为 False 时语气已暂停（或被语境策略关闭），system_suffix 为空串。
+
+        context 是宿主可选的结构化元数据（例如 {"scene": "code"}），用于覆盖
+        自动检测；不给就走确定性语境策略（受配置里的 `scene_adapt` 控制）。
 
         状态提交时机：抽样与提示词拼装都成功之后才提交轮次状态。抽样成功但拼装
         失败时，轮次与历史都不前进——半完成的状态不能当成成功提交。
         """
         cfg = self.load_config()
+
+        # 语境策略在抽样之前判断：危机等需要完全关闭风格的场景不应该先抽一个
+        # 风格再丢掉——那会把不该用的风格写进历史。
+        context_decision = resolve_context(
+            user_input,
+            explicit=context,
+            scene_adapt=bool(cfg.get("scene_adapt", True)),
+        )
+        if context_decision["style_off"]:
+            notes = [context_decision["reason"]]
+            if cfg.get("paused"):
+                notes.append("语气已暂停，本轮使用中性语气作答。")
+            return {
+                "active": False,
+                "system_suffix": "",
+                "style": None,
+                "members": [],
+                "density_range": None,
+                "context": context_decision,
+                "notes": notes,
+            }
+
         decision = advance_turn(self.state, cfg, topic=topic, seed=self.seed)
 
         if not decision["active"]:
@@ -116,18 +142,24 @@ class ToneHost:
                 "style": None,
                 "members": [],
                 "density_range": None,
+                "context": context_decision,
                 "notes": decision["notes"],
             }
 
         members = members_with_weights(cfg, [decision["main"]] + decision["accents"])
 
-        level = density or cfg.get("density", "standard")
-        payload = compose(members, [weight for _, weight in members], level, cfg.get("variants"))
+        level = density or context_decision.get("density_level") \
+            or cfg.get("density", "standard")
+        payload = compose(members, [weight for _, weight in members], level,
+                          cfg.get("variants"), context_decision)
 
         # 历史先落盘，状态后提交：顺序固定，异常时不会出现「状态前进了但历史没写」
         # 的中间态。
         save_history(self.history_path, decision["state"]["history"])
         self.state = decision["state"]
+        notes = list(decision["notes"])
+        if context_decision["source"] != "disabled":
+            notes.append(context_decision["reason"])
         return {
             "active": True,
             "system_suffix": payload["prompt"],
@@ -139,7 +171,8 @@ class ToneHost:
             "density_range": payload["density_range"],
             "conflicts": payload["conflicts"],
             "switched": decision["switched"],
-            "notes": decision["notes"],
+            "context": context_decision,
+            "notes": notes,
         }
 
     def observe(self, reply_text: str, style=None, density=None) -> dict:

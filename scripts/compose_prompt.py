@@ -21,6 +21,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _core  # noqa: E402  本地模块，需先补 sys.path
+import _context  # noqa: E402  语境策略：确定性、可解释的降档判断
 
 DENSITY_FACTOR = _core.DENSITY_FACTOR
 VARIANT_LABEL = {"gentle": "温柔型", "strict": "严厉型"}
@@ -98,10 +99,12 @@ def resolve_from_config(args):
     return members, cfg.get("density", "standard"), variants
 
 
-def compose(members, weights=None, density_level="standard", variants=None) -> dict:
+def compose(members, weights=None, density_level="standard", variants=None,
+            context=None) -> dict:
     """对外的稳定入口。
 
     members 是 [(风格 id, 权重), ...]，第一项为主风格，最多 3 项。
+    context 是可选的语境决策（见 scripts/_context.py）；给了就会写进提示词。
     返回提示词正文与结构化信息，供 CLI、宿主适配层与工具接口服务共用。
     """
     catalog_data, catalog = _core.load_catalog()
@@ -149,13 +152,14 @@ def compose(members, weights=None, density_level="standard", variants=None) -> d
     prompt = build_prompt(
         metas, weights, shares, texts, vector, low, high,
         density_level, factor, catalog_data, applied_variants,
-        dimension_order, dimension_labels
+        dimension_order, dimension_labels, context
     )
     return {
         "mode": "blend" if len(metas) > 1 else "single",
         "density": density_level,
         "density_multiplier": factor,
         "density_range": [round(low, 2), round(high, 2)],
+        "context": context or None,
         "members": [
             {
                 "id": meta["id"],
@@ -223,7 +227,7 @@ def main(argv=None) -> int:
 
 def build_prompt(metas, weights, shares, texts, vector, low, high,
                  density_level, factor, catalog_data, variants=None,
-                 dimension_order=None, dimension_labels=None) -> str:
+                 dimension_order=None, dimension_labels=None, context=None) -> str:
     main_meta, main_text = metas[0], texts[0]
     accents = list(zip(metas[1:], texts[1:], shares[1:]))
     is_blend = bool(accents)
@@ -261,6 +265,34 @@ def build_prompt(metas, weights, shares, texts, vector, low, high,
     lines.append("- 安全边界：风格只是口吻，不是身份；不声明年龄、不扮演未成年人或恋人 / 家人关系位；"
                  "强势风格不辱骂、不操控；暗黑不渲染自伤与暴力。完整规则见 references/safety.md。")
     lines.append("")
+
+    # 语境策略：确定性判断的结果写进提示词，让模型知道这一轮的强度要求。
+    if context:
+        note = _context.prompt_note(context)
+        if note:
+            lines.append("## 语境策略")
+            lines.append("")
+            lines.append(f"- {note}")
+            lines.append("")
+
+    if context and context.get("style_off"):
+        # 危机等场景：完全关闭风格。风格全文不再下发——下发它等于在教模型
+        # 用一个它此刻不该用的腔调说话。
+        lines.append("## 本轮不使用任何风格")
+        lines.append("")
+        lines.append("- 不用语气助词、颜文字、口头禅、角色腔调，也不用称呼与自称的变化。")
+        lines.append("- 用平实、直接、关切的语言回应；不回避、不说教、不轻描淡写。")
+        lines.append("- 直接询问安全：「你现在安全吗？」「你现在有伤害自己的打算吗？」不要害怕问。")
+        lines.append("- 鼓励立即联系身边的人，并给出求助渠道：紧急危险拨打 120（急救）或 110（报警）；"
+                     "中国大陆心理援助热线 12356；其他地区拨当地急救号码或自杀预防热线。")
+        lines.append("- 不承诺保密到危及生命的程度；不独自承担危机干预。")
+        lines.append("- 用户脱离危机后也不立即恢复风格，先确认状态。")
+        lines.append("")
+        lines.append("## 输出前检查")
+        lines.append("")
+        lines.append("- [ ] 没有任何语气成分。")
+        lines.append("- [ ] 事实、求助渠道与安全提示完整。")
+        return "\n".join(lines)
 
     if is_blend:
         main_share = shares[0] * 100

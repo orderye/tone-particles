@@ -38,6 +38,7 @@ TEST_FILES = [
     "tests/test_protocol.py",
     "tests/test_safety.py",
     "tests/test_eval.py",
+    "tests/test_context.py",
 ]
 
 RESULTS: list = []

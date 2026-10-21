@@ -1,6 +1,6 @@
 # 语气助词 Skill（tone-particles）
 
-版本 0.3.0 ｜ 对应 PRD v0.1 ｜ 21 种中文口吻风格
+版本 0.3.5 ｜ 对应 PRD v0.1 ｜ 21 种中文口吻风格
 
 仓库：[GitHub](https://github.com/orderye/tone-particles) ｜ [CNB 镜像](https://cnb.cool/toroyxxx/tone-particles) ｜ [Releases](https://github.com/orderye/tone-particles/releases)
 
@@ -11,7 +11,9 @@
 - **21 种风格**：御姐、萌妹、少女、邻家、高冷、三无、元气、天然呆、傲娇、女王、贤惠、萝莉、辣妹、酷飒、古典、暗黑、知性、学姐、学妹、老师、大小姐。
 - **四种运行模式**：固定一种、按权重融合、随机轮换、融合随机。
 - **内容保真**：先答后套；助词只作用于表达层，不进入代码、表格、数字与专有名词。
-- **场景自适应**：代码、医疗、法律、情绪低落、危机信号时自动降档或关闭。
+- **场景自适应**：代码、医疗、法律、情绪低落、危机信号时自动降档或关闭。判断由
+  共享核心里的确定性规则完成（`scripts/_context.py`），带可解释的 reason code；
+  危机规则不可被任何配置或宿主元数据关闭。
 - **可复现的随机**：由脚本按权重与去重窗口抽样，模型只负责表达。
 - **可测试**：自带密度与硬规则检测脚本，另有一套端到端评测（`eval/`）。
 - **共享核心**：三个 CLI 共用 `scripts/_core.py`，配置、密度区间与抽样语义只有一处定义。
@@ -38,6 +40,7 @@ tone-particles/
 │   └── onboarding.md        # 导入向导
 ├── scripts/
 │   ├── _core.py             # 共享核心：配置、风格目录、密度区间、抽样
+│   ├── _context.py          # 语境策略：确定性的场景判断与降档
 │   ├── pick_style.py        # 随机 / 加权选风格
 │   ├── compose_prompt.py    # 生成融合提示词
 │   └── check_density.py     # 密度与硬规则检测
@@ -60,6 +63,9 @@ tone-particles/
 │   └── package.py           # 构建 tone-particles-<版本>.zip
 ├── tests/                   # 单元测试（不随包分发）
 ├── Docs/                    # PRD 与接入指南（不随包分发）
+│   ├── 宿主接入指南.md
+│   ├── MCP接入指南.md
+│   └── 语境策略与场景优先级.md
 └── VERSION                  # 版本单一来源（不随包分发）
 ```
 
@@ -87,7 +93,7 @@ git clone https://github.com/orderye/tone-particles.git .skills/tone-particles
 git clone https://cnb.cool/toroyxxx/tone-particles.git ~/.skills/tone-particles
 ```
 
-也可以直接下载 Release 里的 `tone-particles-0.3.0.zip` 解压后放入 skills 目录。
+也可以直接下载 Release 里的 `tone-particles-0.3.5.zip` 解压后放入 skills 目录。
 
 手动复制的方式同样可用，在 `tone-particles` 的上一级目录执行：
 
@@ -101,7 +107,7 @@ mkdir -p ~/.skills && cp -R tone-particles ~/.skills/
 
 ### 支持 zip 导入的平台
 
-从 [Releases](https://github.com/orderye/tone-particles/releases) 下载 `tone-particles-0.3.0.zip` 后上传（zip 顶层是 `tone-particles/` 目录，`SKILL.md` 位于该目录内）。不同版本的 Skills 入口位置可能变化，以官方文档为准。
+从 [Releases](https://github.com/orderye/tone-particles/releases) 下载 `tone-particles-0.3.5.zip` 后上传（zip 顶层是 `tone-particles/` 目录，`SKILL.md` 位于该目录内）。不同版本的 Skills 入口位置可能变化，以官方文档为准。
 
 维护者重建分发包用 `python3 tools/package.py`：白名单构建（只含 README、SKILL.md、config、references、scripts、styles）、顶层固定 `tone-particles/`、条目排序与固定时间戳保证同样内容产出字节一致的包；版本号读根目录 `VERSION`，并校验 README 与 `mcp/server.py` 的版本串一致。
 
@@ -348,6 +354,7 @@ python3 tests/test_eval.py      # 评测体系：状态语义、严格模式、�
 
 ## 版本
 
+- `0.3.5`：新增确定性语境策略 `scripts/_context.py`——按可审计的文本规则判断场景（代码 / 表格 / 高风险 / 正式写作 / 报错排查 / 情绪低落 / 非中文 / 危机），带 reason code 与可解释理由；危机硬规则不可被配置或宿主元数据关闭，且不抽样、不写历史；宿主适配层与 MCP `get_style_prompt` 新增可选 `context` 参数（向后兼容，旧调用方式不变）；新增 `Docs/语境策略与场景优先级.md` 与 `tests/test_context.py`。
 - `0.3.0`：评测引入「通过 / 未达标 / 未评测 / 被阻塞」四种状态并新增 `--strict` 严格验收开关；报告补上仓库版本、Git commit、Python 版本、评测数据哈希、后端元信息与分母定义；新增确定性的「语义锚点保真」指标与用例结构校验 `eval/validate_cases.py`；评审通道出错不再被算成「目标回复失败」；后端超时与重试上限可配。
 - `0.2.2`：配置写入改为原子写 + 跨进程锁 + 写前写后校验，杜绝并发写坏配置与「写入失败却返回成功」；MCP 增加 schema 驱动的参数校验、工具执行异常不再拖垮服务；宿主适配层改为「提示词拼装成功后才提交轮次状态」；新增 `user_dir` / `TONE_PARTICLES_USER_DIR` 隔离多用户配置与历史；新增 `tests/test_config.py`、`tests/test_protocol.py`、`tests/test_safety.py` 与 `tools/version.py`（版本号同步）。
 - `0.2.1`：修复宿主适配层丢弃配置权重（宿主注入的配比与 CLI 不一致）、`--root` 不生效、MCP 静默写入未知配置键三处缺陷；eval 判分不再把「评审未作答 / 回复长度不足」显示成失败；边界字符集、违规类型、枚举与颜文字字符集收敛为单一来源，并新增 md↔json 一致性校验；补充 `tests/` 单元测试与 `tools/`（自检、可复现打包）。
