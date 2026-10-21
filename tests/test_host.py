@@ -85,6 +85,63 @@ def main() -> int:
         info = fresh.begin_session()
         r.check("损坏历史被容忍", info["history"] == 0)
 
+        # -- 状态提交时机：拼装失败时轮次与历史都不前进 ------------------------
+        import host_adapter
+
+        with tempfile.TemporaryDirectory() as tmp2:
+            fail_dir = Path(tmp2)
+            fail_cfg = fail_dir / "user-config.json"
+            fail_hist = fail_dir / "tone-history.json"
+            write_config(fail_cfg)
+            failing = ToneHost(config_path=fail_cfg, history_path=fail_hist, seed=7)
+            failing.begin_session()
+            original_compose = host_adapter.compose
+
+            def boom(*args, **kwargs):
+                raise SystemExit("模拟提示词拼装失败")
+
+            host_adapter.compose = boom
+            try:
+                failing.next_turn("这句会失败")
+            except SystemExit:
+                r.check("拼装失败会抛出", True)
+            else:
+                r.check("拼装失败会抛出", False, "没有报错")
+            finally:
+                host_adapter.compose = original_compose
+            r.check("拼装失败时轮次不前进", failing.get_state()["turn"] == 0,
+                    str(failing.get_state()["turn"]))
+            r.check("拼装失败时历史不落盘", not fail_hist.exists())
+
+        # -- 用户隔离：不同 user_dir 的配置与历史互不串线 ----------------------
+        with tempfile.TemporaryDirectory() as tmp2:
+            base = Path(tmp2)
+            dir_a = base / "a"
+            dir_b = base / "b"
+            dir_a.mkdir()
+            dir_b.mkdir()
+            write_config(dir_a / "user-config.json")
+            write_config(dir_b / "user-config.json")
+            host_a = ToneHost(user_dir=dir_a, seed=7)
+            host_b = ToneHost(user_dir=dir_b, seed=7)
+            r.check("user_dir 决定配置路径",
+                    host_a.config_path == dir_a / "user-config.json",
+                    str(host_a.config_path))
+            r.check("user_dir 决定历史路径",
+                    host_a.history_path == dir_a / "tone-history.json",
+                    str(host_a.history_path))
+            host_a.begin_session()
+            host_b.begin_session()
+            host_a.next_turn("A 用户的输入", topic="A")
+            r.check("A 用户的历史落在自己的目录",
+                    (dir_a / "tone-history.json").exists())
+            r.check("B 用户的历史不受 A 用户影响",
+                    not (dir_b / "tone-history.json").exists())
+            (dir_b / "tone-history.json").write_text('["S17"]', encoding="utf-8")
+            host_b.begin_session()
+            r.check("两个用户的会话状态独立",
+                    host_a.get_state()["history"] != host_b.get_state()["history"])
+
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         (root / "config").mkdir()

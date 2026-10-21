@@ -30,7 +30,14 @@ import check_density  # noqa: E402
 REQUIRED_CONFIGS = ["defaults.json", "particles.json", "styles.json", "user-config.example.json"]
 STYLE_FIELDS = ["定位", "词库", "签名元素", "颜文字"]
 TENDENCY_MAP = {"极低": "very_low", "高": "high", "中": "medium", "低": "low"}
-TEST_FILES = ["tests/test_core.py", "tests/test_host.py", "tests/test_mcp.py"]
+TEST_FILES = [
+    "tests/test_core.py",
+    "tests/test_host.py",
+    "tests/test_mcp.py",
+    "tests/test_config.py",
+    "tests/test_protocol.py",
+    "tests/test_safety.py",
+]
 
 RESULTS: list = []
 
@@ -166,6 +173,23 @@ def check_tests() -> None:
         run_command(f"单元测试：{path}", [path])
 
 
+def check_version() -> None:
+    """版本号一致性：VERSION（单一来源）、README、MCP 服务、styles.json。"""
+    sys.path.insert(0, str(ROOT / "tools"))
+    try:
+        import package
+    except ImportError as exc:
+        record("版本号一致（VERSION / README / MCP / styles.json）", False, str(exc))
+        return
+    try:
+        version = package.read_version()
+        package.check_version_consistency(version)
+    except SystemExit as exc:
+        record("版本号一致（VERSION / README / MCP / styles.json）", False, str(exc))
+    else:
+        record("版本号一致（VERSION / README / MCP / styles.json）", True)
+
+
 # --------------------------------------------------------------------------
 # 入口
 # --------------------------------------------------------------------------
@@ -176,6 +200,7 @@ def main() -> int:
     check_styles()
     check_md_json_consistency()
     check_kaomoji_detection()
+    check_version()
     check_cli()
     check_tests()
 

@@ -70,11 +70,12 @@ class Tools:
         return compose_prompt.compose(members, weights, density or "standard", variants)
 
     def set_user_style(self, **patch):
-        """写入用户配置。未知键报错；值为 None 表示不改动。"""
-        cfg = self._config()
-        _core.apply_config_patch(cfg, patch)
-        cfg = _core.normalize_config(_core.migrate_config(cfg))
-        _core.save_config(self.config_path, cfg)
+        """写入用户配置。未知键报错；值为 None 表示不改动。
+
+        走共享核心的加锁「读—改—写」：写成功之后才返回，写失败（只读目录、
+        并发冲突、校验不通过）一律报工具级错误，不返回「保存成功」。
+        """
+        cfg = _core.update_config_file(self.config_path, patch)
         return {
             "saved": True,
             "config_path": str(self.config_path),

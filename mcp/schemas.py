@@ -147,3 +147,88 @@ SCHEMAS = {
     "set_user_style": SET_USER_STYLE,
     "pick_next_style": PICK_NEXT_STYLE,
 }
+
+
+# --------------------------------------------------------------------------
+# 运行时校验
+# --------------------------------------------------------------------------
+#
+# schema 不只是给客户端看的表单说明，也是服务端的校验依据。这里实现 schema 里
+# 实际用到的那些关键字的子集，不追求通用 JSON Schema 实现。
+
+
+def _type_ok(value, expected: str) -> bool:
+    if expected == "object":
+        return isinstance(value, dict)
+    if expected == "array":
+        return isinstance(value, list)
+    if expected == "string":
+        return isinstance(value, str)
+    if expected == "boolean":
+        return isinstance(value, bool)
+    if expected == "integer":
+        return isinstance(value, int) and not isinstance(value, bool)
+    if expected == "number":
+        return isinstance(value, (int, float)) and not isinstance(value, bool)
+    return True
+
+
+def _check_value(name: str, value, spec: dict) -> list:
+    """校验单个参数值，返回错误信息列表。"""
+    errors: list = []
+    expected = spec.get("type")
+    if expected and not _type_ok(value, expected):
+        errors.append(f"参数 {name} 的类型应为 {expected}，实际为 {type(value).__name__}")
+        return errors
+    if "enum" in spec and value not in spec["enum"]:
+        errors.append(
+            f"参数 {name} 只能是 {sorted(spec['enum'], key=str)} 之一，当前为 {value!r}")
+    if expected == "array":
+        if "minItems" in spec and len(value) < spec["minItems"]:
+            errors.append(f"参数 {name} 至少要有 {spec['minItems']} 项")
+        if "maxItems" in spec and len(value) > spec["maxItems"]:
+            errors.append(f"参数 {name} 最多 {spec['maxItems']} 项")
+        item_spec = spec.get("items")
+        if item_spec:
+            for index, item in enumerate(value):
+                errors.extend(_check_value(f"{name}[{index}]", item, item_spec))
+    if expected == "object":
+        properties = spec.get("properties") or {}
+        if spec.get("additionalProperties") is False:
+            for key in value:
+                if key not in properties:
+                    errors.append(f"参数 {name} 里出现了未知字段 {key!r}")
+        for key, item in value.items():
+            sub = properties.get(key)
+            if sub:
+                errors.extend(_check_value(f"{name}.{key}", item, sub))
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        if "minimum" in spec and value < spec["minimum"]:
+            errors.append(f"参数 {name} 不能小于 {spec['minimum']}")
+        if "maximum" in spec and value > spec["maximum"]:
+            errors.append(f"参数 {name} 不能大于 {spec['maximum']}")
+    return errors
+
+
+def validate_arguments(schema: dict, arguments) -> tuple:
+    """按 schema 校验工具参数。
+
+    返回 (协议级错误, 未知参数)：
+    - 协议级错误（类型、枚举、长度、越界、缺必填）→ JSON-RPC -32602。
+    - 未知参数 → 工具级错误。既有契约里「未知配置键」是工具级错误
+      （isError，模型能读到并自我纠正），这里保持不变，但不再静默丢弃。
+    """
+    if not isinstance(arguments, dict):
+        return ["arguments 必须是 JSON 对象。"], []
+    errors: list = []
+    properties = schema.get("properties") or {}
+    for key in schema.get("required", []):
+        if key not in arguments:
+            errors.append(f"缺少必填参数：{key}")
+    unknown = [key for key in arguments if key not in properties]
+    for key, value in arguments.items():
+        spec = properties.get(key)
+        if not spec or value is None:
+            continue
+        errors.extend(_check_value(key, value, spec))
+    return errors, unknown

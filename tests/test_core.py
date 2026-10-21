@@ -167,6 +167,48 @@ def main() -> int:
         saved = json.loads(history_path.read_text(encoding="utf-8"))
         r.check("save_history 只留最近 50 条", len(saved) == 50 and saved[-1] == "S59")
 
+    # -- 抽样边界 ------------------------------------------------------------
+    exact = base_config(switch={"no_repeat_window": 0},
+                        styles=[{"id": "S09", "weight": 3},
+                                {"id": "S04", "weight": 2},
+                                {"id": "S17", "weight": 1}])
+    counts = {"S09": 0, "S04": 0, "S17": 0}
+    repeats = 0
+    previous = None
+    for index in range(3000):
+        main = _core.pick(exact, [], seed=index)["main"]
+        if main == previous:
+            repeats += 1
+        previous = main
+        counts[main] += 1
+    share = {sid: count / 3000 for sid, count in counts.items()}
+    r.check("去重窗口为 0 时权重精确（S09≈0.5）",
+            abs(share["S09"] - 0.5) < 0.05, str(share))
+    r.check("去重窗口为 0 时允许连续重复", repeats > 0, f"{repeats} 次连续重复")
+
+    tiny = base_config(styles=[{"id": "S09", "weight": 1}, {"id": "S04", "weight": 1}],
+                       switch={"no_repeat_window": 5})
+    result = _core.pick(tiny, ["S09", "S04"], seed=1)
+    r.check("池小于去重窗口时仍能抽到风格",
+            result["main"] in {"S09", "S04"}, str(result))
+    r.check("池小于去重窗口时给出放宽说明",
+            any("去重窗口" in note for note in result["notes"]), str(result["notes"]))
+
+    long_history = base_config(switch={"no_repeat_window": 2})
+    result = _core.pick(long_history, ["S01"] * 50, seed=3)
+    r.check("超长历史不影响抽样", result["main"] in {"S09", "S04", "S17"}, str(result))
+
+    for mode in ("single", "blend", "rotate", "blend_random"):
+        cfg = base_config(mode=mode)
+        r.check(f"{mode} 模式同一 seed 可复现",
+                _core.pick(cfg, ["S01"], seed=11) == _core.pick(cfg, ["S01"], seed=11))
+    r.check("四种模式都能给出主风格",
+            all(_core.pick(base_config(mode=mode), [], seed=5)["main"]
+                for mode in ("single", "blend", "rotate", "blend_random")))
+
+    r.raises("空风格池报错", lambda: _core.normalize_config(
+        {"mode": "single", "styles": []}), contains="至少要有 1 项")
+
     # -- 成员权重与资源根 ------------------------------------------------------
     cfg = base_config()
     r.check("members_with_weights 按配置配权",

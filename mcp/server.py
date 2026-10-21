@@ -24,12 +24,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from schemas import SCHEMAS  # noqa: E402
+from schemas import SCHEMAS, validate_arguments  # noqa: E402
 from tools import TOOL_DESCRIPTIONS, Tools, call_tool  # noqa: E402
 
 PROTOCOL_VERSION = "2024-11-05"
 SERVER_NAME = "tone-particles"
-SERVER_VERSION = "0.2.1"
+SERVER_VERSION = "0.2.2"
 
 PARSE_ERROR = -32700
 INVALID_REQUEST = -32600
@@ -50,10 +50,16 @@ def handle_message(message: dict, tools: Tools):
     """处理一条 JSON-RPC 消息。通知类返回 None。"""
     method = message.get("method")
     request_id = message.get("id")
-    params = message.get("params") or {}
+    params = message.get("params")
+    if params is None:
+        params = {}
+    if not isinstance(params, dict):
+        return make_error(request_id, INVALID_PARAMS, "params 必须是 JSON 对象。")
 
     if not method:
         return make_error(request_id, INVALID_REQUEST, "缺少 method。")
+    if not isinstance(method, str):
+        return make_error(request_id, INVALID_REQUEST, "method 必须是字符串。")
 
     if method.startswith("notifications/"):
         return None
@@ -88,15 +94,37 @@ def handle_message(message: dict, tools: Tools):
 
     if method == "tools/call":
         name = params.get("name")
-        arguments = params.get("arguments") or {}
-        if not name:
+        arguments = params.get("arguments")
+        if arguments is None:
+            arguments = {}
+        if not isinstance(arguments, dict):
+            return make_error(
+                request_id, INVALID_PARAMS, "tools/call 的 arguments 必须是 JSON 对象。")
+        if not name or not isinstance(name, str):
             return make_error(request_id, INVALID_PARAMS, "tools/call 缺少 name。")
-        required = SCHEMAS.get(name, {}).get("required", [])
-        missing = [item for item in required if item not in arguments]
-        if missing:
+        schema = SCHEMAS.get(name)
+        if schema is None:
+            # 未知工具是工具级错误：模型能读到并自我纠正。
+            return make_response(request_id, {
+                "content": [{"type": "text", "text": f"未知工具：{name}"}],
+                "isError": True,
+            })
+        errors, unknown = validate_arguments(schema, arguments)
+        if errors:
             return make_error(
                 request_id, INVALID_PARAMS,
-                f"工具 {name} 缺少必填参数：{'、'.join(missing)}")
+                f"工具 {name} 的参数不合法：{'；'.join(errors)}")
+        if unknown:
+            # 未知参数不静默丢弃。既有契约里「未知配置键」是工具级错误，
+            # 这里保持同一形态，只是把丢弃换成显式报错。
+            return make_response(request_id, {
+                "content": [{
+                    "type": "text",
+                    "text": f"工具 {name} 收到未知参数：{'、'.join(sorted(unknown))}。"
+                            f"可用参数：{'、'.join(sorted(schema.get('properties') or {}))}。",
+                }],
+                "isError": True,
+            })
         try:
             text = call_tool(tools, name, arguments)
         except SystemExit as exc:
@@ -119,6 +147,11 @@ def handle_message(message: dict, tools: Tools):
 
 
 def serve(tools: Tools, stdin=None, stdout=None) -> int:
+    """逐行处理 JSON-RPC 消息。
+
+    stdout 只写协议响应：任何诊断信息都走 stderr。单个请求出错不能让整个进程
+    退出——后续消息必须还能被处理。
+    """
     stdin = stdin or sys.stdin
     stdout = stdout or sys.stdout
     for line in stdin:
@@ -139,7 +172,13 @@ def serve(tools: Tools, stdin=None, stdout=None) -> int:
                 ensure_ascii=False) + "\n")
             stdout.flush()
             continue
-        response = handle_message(message, tools)
+        try:
+            response = handle_message(message, tools)
+        except Exception as exc:  # noqa: BLE001 - 单条消息出错不应终止服务
+            print(f"处理消息时出错：{type(exc).__name__}: {exc}", file=sys.stderr)
+            response = make_error(
+                message.get("id"), INTERNAL_ERROR,
+                f"内部错误：{type(exc).__name__}")
         if response is None:
             continue
         stdout.write(json.dumps(response, ensure_ascii=False) + "\n")

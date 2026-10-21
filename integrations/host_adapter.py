@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -21,34 +22,39 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from tone_core import (  # noqa: E402
     advance_turn,
-    apply_config_patch,
     check_density,
     compose,
     load_catalog,
     load_config,
     load_json,
     members_with_weights,
-    migrate_config,
-    normalize_config,
     save_config,
     save_history,
     set_resource_root,
     skill_root,
+    update_config_file,
 )
+
+# 用户级配置与历史的存放目录。显式传入 user_dir 优先，其次是环境变量，
+# 都没有时沿用 skill 目录下的 config/（保持旧调用方式可用）。
+USER_DIR_ENV = "TONE_PARTICLES_USER_DIR"
 
 
 class ToneHost:
     """一个用户（或一份会话）的语气状态机。"""
 
-    def __init__(self, config_path=None, history_path=None, root=None, seed=None):
+    def __init__(self, config_path=None, history_path=None, root=None, seed=None,
+                 user_dir=None):
         if root:
             # root 的语义是「skill 根目录」：styles / particles / defaults 都从那里取
             set_resource_root(root)
         self.root = skill_root()
+        user_dir = user_dir or os.environ.get(USER_DIR_ENV)
+        base = Path(user_dir).expanduser() if user_dir else self.root / "config"
         self.config_path = Path(config_path) if config_path else (
-            self.root / "config" / "user-config.json")
+            base / "user-config.json")
         self.history_path = Path(history_path) if history_path else (
-            self.root / "config" / "tone-history.json")
+            base / "tone-history.json")
         self.seed = seed
         self.state = {"history": [], "current": None, "turn": 0, "topic": None}
         self._catalog = None
@@ -80,7 +86,7 @@ class ToneHost:
         history = []
         if self.history_path.exists():
             try:
-                history = load_json(self.history_path, label="配置文件", fallback=[])
+                history = load_json(self.history_path, label="历史文件", fallback=[])
             except SystemExit:
                 history = []
         if not isinstance(history, list):
@@ -95,12 +101,15 @@ class ToneHost:
 
         返回 {"active", "system_suffix", "style", "members", "density_range", "notes"}。
         `active` 为 False 时语气已暂停，system_suffix 为空串。
+
+        状态提交时机：抽样与提示词拼装都成功之后才提交轮次状态。抽样成功但拼装
+        失败时，轮次与历史都不前进——半完成的状态不能当成成功提交。
         """
         cfg = self.load_config()
         decision = advance_turn(self.state, cfg, topic=topic, seed=self.seed)
-        self.state = decision["state"]
 
         if not decision["active"]:
+            self.state = decision["state"]
             return {
                 "active": False,
                 "system_suffix": "",
@@ -115,7 +124,10 @@ class ToneHost:
         level = density or cfg.get("density", "standard")
         payload = compose(members, [weight for _, weight in members], level, cfg.get("variants"))
 
+        # 历史先落盘，状态后提交：顺序固定，异常时不会出现「状态前进了但历史没写」
+        # 的中间态。
         save_history(self.history_path, decision["state"]["history"])
+        self.state = decision["state"]
         return {
             "active": True,
             "system_suffix": payload["prompt"],
@@ -155,12 +167,12 @@ class ToneHost:
         }
 
     def update_config(self, patch: dict) -> dict:
-        """应用控制指令对应的配置变更并写回。未知键报错；None 表示不改动。"""
-        cfg = self.load_config()
-        apply_config_patch(cfg, patch)
-        cfg = normalize_config(migrate_config(cfg))
-        self.save_config(cfg)
-        return cfg
+        """应用控制指令对应的配置变更并写回。未知键报错；None 表示不改动。
+
+        走共享核心的加锁「读—改—写」：并发更新时不会用旧读覆盖别人刚写入的
+        字段，写完重新校验，失败时旧配置原样保留。
+        """
+        return update_config_file(self.config_path, patch)
 
     def get_state(self) -> dict:
         return {

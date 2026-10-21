@@ -1,6 +1,6 @@
 # 语气助词 Skill（tone-particles）
 
-版本 0.2.1 ｜ 对应 PRD v0.1 ｜ 21 种中文口吻风格
+版本 0.2.2 ｜ 对应 PRD v0.1 ｜ 21 种中文口吻风格
 
 仓库：[GitHub](https://github.com/orderye/tone-particles) ｜ [CNB 镜像](https://cnb.cool/toroyxxx/tone-particles) ｜ [Releases](https://github.com/orderye/tone-particles/releases)
 
@@ -87,7 +87,7 @@ git clone https://github.com/orderye/tone-particles.git .skills/tone-particles
 git clone https://cnb.cool/toroyxxx/tone-particles.git ~/.skills/tone-particles
 ```
 
-也可以直接下载 Release 里的 `tone-particles-0.2.1.zip` 解压后放入 skills 目录。
+也可以直接下载 Release 里的 `tone-particles-0.2.2.zip` 解压后放入 skills 目录。
 
 手动复制的方式同样可用，在 `tone-particles` 的上一级目录执行：
 
@@ -101,7 +101,7 @@ mkdir -p ~/.skills && cp -R tone-particles ~/.skills/
 
 ### 支持 zip 导入的平台
 
-从 [Releases](https://github.com/orderye/tone-particles/releases) 下载 `tone-particles-0.2.1.zip` 后上传（zip 顶层是 `tone-particles/` 目录，`SKILL.md` 位于该目录内）。不同版本的 Skills 入口位置可能变化，以官方文档为准。
+从 [Releases](https://github.com/orderye/tone-particles/releases) 下载 `tone-particles-0.2.2.zip` 后上传（zip 顶层是 `tone-particles/` 目录，`SKILL.md` 位于该目录内）。不同版本的 Skills 入口位置可能变化，以官方文档为准。
 
 维护者重建分发包用 `python3 tools/package.py`：白名单构建（只含 README、SKILL.md、config、references、scripts、styles）、顶层固定 `tone-particles/`、条目排序与固定时间戳保证同样内容产出字节一致的包；版本号读根目录 `VERSION`，并校验 README 与 `mcp/server.py` 的版本串一致。
 
@@ -215,6 +215,29 @@ python3 mcp/server.py --config /path/to/user-config.json
 
 `config/styles.json` 中每种风格带独立 `version` 与向量，升级时可单独替换某个风格文件而不影响其他风格。`config/particles.json` 是 `check_density.py` 的机器可读词表。
 
+### 配置怎么被写入
+
+所有写入路径（宿主 `update_config()`、MCP `set_user_style`）都走共享核心里同一套
+「读—改—写」：
+
+- **原子写入**：先写同目录临时文件、flush + fsync，再原子替换。进程在写入中途
+  被杀掉时，旧配置保持完整可读，不会留下半截 JSON。
+- **跨进程加锁**：更新期间会持有 `config/user-config.json.lock`。两个进程同时改
+  同一份配置时，后一个会在锁上等待（默认最多 5 秒），拿不到锁就报错，不会
+  静默覆盖。锁等待超时会给出可诊断的错误。
+- **写前校验**：非法值（枚举错、权重非正、风格 id 不存在）直接拒绝，不会写进
+  配置，旧文件字节不变。
+- **写后校验**：写完重新读取并归一化，确认落盘内容仍可读。写入失败不会返回
+  「保存成功」。
+- **未知字段**：默认保留并向 stderr 告警（不静默丢弃）；严格模式下直接拒绝。
+- **越界数值**：`switch.no_repeat_window`（0–10）与 `switch.turns`（1–20）会被
+  夹到合法区间，并产生一条告警——不静默改写用户的意图。
+- **权限**：用户配置写为 `0600`（仅本人可读写）。
+
+按用户隔离：多用户宿主请给每个用户单独的 `config_path` / `history_path`，或用
+`TONE_PARTICLES_USER_DIR` 环境变量 / `ToneHost(user_dir=...)` 指定各自的目录。
+默认路径是 skill 目录下的 `config/`，沿用旧行为。
+
 ## 脚本
 
 三个脚本都只依赖 Python 标准库（3.9+）。
@@ -280,7 +303,7 @@ python3 scripts/check_density.py reply.txt --style S09 --strict
 
 ```bash
 # 一条命令跑全部自检：四个 config JSON、21 风格完整性、
-# md↔json 一致性（密度 / 颜文字倾向 / 签名元素）、CLI 冒烟、三个单元测试
+# md↔json 一致性（密度 / 颜文字倾向 / 签名元素）、版本号一致性、CLI 冒烟、六个测试文件
 python3 tools/selfcheck.py
 
 # 端到端评测（确定性指标；需模型的三项标为「未评测」）
@@ -290,9 +313,12 @@ python3 eval/run.py
 单元测试在 `tests/`（纯标准库，不依赖 pytest），也可以单独跑：
 
 ```bash
-python3 tests/test_core.py   # 核心函数：配置归一、抽样、轮次状态机
-python3 tests/test_host.py   # 宿主适配层（含权重配比回归）
-python3 tests/test_mcp.py    # MCP 协议与四个工具
+python3 tests/test_core.py      # 核心函数：配置归一、抽样、轮次状态机
+python3 tests/test_host.py      # 宿主适配层（含权重配比回归、状态提交时机）
+python3 tests/test_mcp.py       # MCP 协议与四个工具
+python3 tests/test_config.py    # 配置读写：原子写、跨进程锁、并发、失败路径
+python3 tests/test_protocol.py  # 子进程协议契约：MCP stdio 与宿主 CLI
+python3 tests/test_safety.py    # 安全硬规则：文档与用例的一致性回归
 ```
 
 ## 设计说明与已知限制
@@ -312,6 +338,7 @@ python3 tests/test_mcp.py    # MCP 协议与四个工具
 
 ## 版本
 
+- `0.2.2`：配置写入改为原子写 + 跨进程锁 + 写前写后校验，杜绝并发写坏配置与「写入失败却返回成功」；MCP 增加 schema 驱动的参数校验、工具执行异常不再拖垮服务；宿主适配层改为「提示词拼装成功后才提交轮次状态」；新增 `user_dir` / `TONE_PARTICLES_USER_DIR` 隔离多用户配置与历史；新增 `tests/test_config.py`、`tests/test_protocol.py`、`tests/test_safety.py` 与 `tools/version.py`（版本号同步）。
 - `0.2.1`：修复宿主适配层丢弃配置权重（宿主注入的配比与 CLI 不一致）、`--root` 不生效、MCP 静默写入未知配置键三处缺陷；eval 判分不再把「评审未作答 / 回复长度不足」显示成失败；边界字符集、违规类型、枚举与颜文字字符集收敛为单一来源，并新增 md↔json 一致性校验；补充 `tests/` 单元测试与 `tools/`（自检、可复现打包）。
 - `0.2.0`：抽出共享核心 `scripts/_core.py`，三个 CLI 的配置、密度区间与抽样语义收敛到一处实现；补齐颜文字违规规则、关系位禁用词与密度档位校验；新增评测体系（`eval/`）、宿主适配层（`integrations/`）与 MCP 服务（`mcp/`）。对应 PRD M4–M6。
 - `0.1.0`：21 风格、四种模式、导入向导、融合 / 随机、场景自适应、颜文字、三个脚本。对应 PRD M1–M3。

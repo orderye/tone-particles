@@ -9,11 +9,14 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import random
 import re
 import sys
+import tempfile
+import time
 from pathlib import Path
 
 MODES = {"single", "blend", "rotate", "blend_random"}
@@ -324,12 +327,47 @@ def kaomoji_budget(tendency: str, level: str = "normal") -> float:
 # 配置
 # --------------------------------------------------------------------------
 
+# 配置里允许出现的顶层键。version 是配置自身的版本号，其余是可改写项。
+TOP_LEVEL_KEYS = CONFIG_KEYS | {"version"}
+# switch / kaomoji 的合法子键
+SWITCH_KEYS = {"granularity", "no_repeat_window", "locked", "turns"}
+KAOMOJI_KEYS = {"enabled", "level"}
+# emoji 目前只有一个取值。它在 README 的字段表里没有单列，非法值只告警不拒绝。
+EMOJI_VALUES = {"style_default"}
+# 老师风格的子模式
+VARIANT_VALUES = {"gentle", "strict"}
+# 目前只有老师风格支持子模式
+VARIANT_STYLES = {"S20"}
+# 用户配置的权限：只允许本人读写。
+CONFIG_FILE_MODE = 0o600
+# 跨进程锁的默认等待上限（秒）
+LOCK_TIMEOUT = 5.0
 
-def normalize_config(cfg: dict) -> dict:
-    """补默认值并做基本校验。"""
+
+def _copy_config(cfg: dict) -> dict:
+    """拷贝配置及其嵌套字典，避免归一化时改动调用方持有的对象。"""
+    out = dict(cfg)
+    for key in ("switch", "kaomoji", "variants"):
+        value = out.get(key)
+        if isinstance(value, dict):
+            out[key] = dict(value)
+    styles = out.get("styles")
+    if isinstance(styles, list):
+        out["styles"] = [dict(item) if isinstance(item, dict) else item for item in styles]
+    return out
+
+
+def normalize_config(cfg: dict, *, warnings: list | None = None) -> dict:
+    """补默认值并做基本校验。
+
+    返回**新的**配置对象，不改动传入的字典。越界但可以修正的数值（去重窗口、
+    轮数）会被夹到合法区间，并在 warnings 里留痕——静默夹取会让用户误以为自己
+    设的值生效了。真正非法的值（枚举错、权重非正）直接报错，不写进配置。
+    """
     if not isinstance(cfg, dict):
         raise SystemExit("配置必须是 JSON 对象。")
 
+    cfg = _copy_config(cfg)
     cfg.setdefault("version", DEFAULT_CONFIG_VERSION)
     cfg.setdefault("mode", "single")
     cfg.setdefault("styles", [])
@@ -382,6 +420,8 @@ def normalize_config(cfg: dict) -> dict:
             continue
         seen.add(sid)
         weight = item.get("weight", 1)
+        if isinstance(weight, bool):
+            raise SystemExit(f"权重必须是整数：{item!r}")
         try:
             weight = int(weight)
         except (TypeError, ValueError):
@@ -392,6 +432,9 @@ def normalize_config(cfg: dict) -> dict:
     cfg["styles"] = cleaned
 
     if cfg["mode"] == "single" and len(cleaned) != 1:
+        if warnings is not None:
+            warnings.append(
+                f"single 模式只使用 1 个风格，配置里的 {len(cleaned)} 个已按第一个截断。")
         cfg["styles"] = cleaned[:1]
 
     window = cfg["switch"].get("no_repeat_window", 3)
@@ -399,22 +442,35 @@ def normalize_config(cfg: dict) -> dict:
         window = int(window)
     except (TypeError, ValueError):
         raise SystemExit("switch.no_repeat_window 必须是整数。")
-    cfg["switch"]["no_repeat_window"] = max(0, min(window, 10))
+    if not 0 <= window <= 10:
+        clamped = max(0, min(window, 10))
+        if warnings is not None:
+            warnings.append(
+                f"switch.no_repeat_window 必须是 0–10，当前为 {window}，已夹到 {clamped}。")
+        window = clamped
+    cfg["switch"]["no_repeat_window"] = window
 
     turns = cfg["switch"].get("turns", 3)
     try:
         turns = int(turns)
     except (TypeError, ValueError):
         raise SystemExit("switch.turns 必须是整数。")
-    cfg["switch"]["turns"] = max(1, min(turns, 20))
+    if not 1 <= turns <= 20:
+        clamped = max(1, min(turns, 20))
+        if warnings is not None:
+            warnings.append(
+                f"switch.turns 必须是 1–20，当前为 {turns}，已夹到 {clamped}。")
+        turns = clamped
+    cfg["switch"]["turns"] = turns
 
     return cfg
 
 
 def migrate_config(cfg: dict) -> dict:
-    """按 version 字段迁移旧配置到当前结构。"""
+    """按 version 字段迁移旧配置到当前结构。返回新对象，不改动传入的字典。"""
     if not isinstance(cfg, dict):
         raise SystemExit("配置必须是 JSON 对象。")
+    cfg = _copy_config(cfg)
     version = cfg.get("version", DEFAULT_CONFIG_VERSION)
     try:
         version = int(version)
@@ -428,11 +484,65 @@ def migrate_config(cfg: dict) -> dict:
     return cfg
 
 
-def load_config(path=None, fallback_defaults: bool = True) -> dict:
+def validate_config(cfg: dict, catalog: dict | None = None, *, strict: bool = False) -> dict:
+    """检查归一化之后的配置，返回 {"errors": [...], "warnings": [...]}。
+
+    策略：
+    - 非法值（枚举错、权重非正、风格 id 不存在）→ errors，必须拒绝写入。
+    - 未知字段 → warnings，默认保留并告警；strict 模式下升级为 errors。
+    - 越界数值已在 normalize 里夹取，这里只作为 warning 再报一次。
+    """
+    errors: list = []
+    warnings: list = []
+
+    for key in cfg:
+        if key not in TOP_LEVEL_KEYS:
+            message = f"未知配置字段 {key!r}，已保留但不会生效。"
+            (errors if strict else warnings).append(message)
+
+    for key, allowed in (("switch", SWITCH_KEYS), ("kaomoji", KAOMOJI_KEYS)):
+        section = cfg.get(key)
+        if isinstance(section, dict):
+            for sub in section:
+                if sub not in allowed:
+                    message = f"未知配置字段 {key}.{sub}，已保留但不会生效。"
+                    (errors if strict else warnings).append(message)
+
+    if cfg.get("emoji") not in EMOJI_VALUES:
+        warnings.append(
+            f"emoji 的取值 {cfg.get('emoji')!r} 不在 {sorted(EMOJI_VALUES)} 内，"
+            "当前按原样保留但不参与任何逻辑。")
+
+    variants = cfg.get("variants")
+    if isinstance(variants, dict):
+        for sid, value in variants.items():
+            sid = str(sid).upper()
+            if value not in VARIANT_VALUES:
+                errors.append(
+                    f"variants.{sid} 必须是 {sorted(VARIANT_VALUES)} 之一，"
+                    f"当前为 {value!r}。")
+            elif sid not in VARIANT_STYLES:
+                warnings.append(
+                    f"variants.{sid} 目前没有支持的子模式（只有 "
+                    f"{'、'.join(sorted(VARIANT_STYLES))} 支持），该值不会生效。")
+
+    if catalog is not None:
+        for item in cfg.get("styles") or []:
+            sid = item.get("id") if isinstance(item, dict) else item
+            if str(sid).upper() not in catalog:
+                errors.append(f"未知风格 id：{sid}。可用：{', '.join(sorted(catalog))}")
+
+    return {"errors": errors, "warnings": warnings}
+
+
+def load_config(path=None, fallback_defaults: bool = True, *,
+                strict: bool = False, quiet: bool = False) -> dict:
     """读取并规范化一份用户配置。
 
     path 不存在（或未指定）且 fallback_defaults 为真时回退到 defaults.json。
     CLI、MCP 工具与宿主适配层三条入口共用这一份实现。
+
+    strict 为真时，未知字段也会让加载失败（默认只告警并保留）。
     """
     path = Path(path) if path else None
     if path is None or not path.exists():
@@ -443,18 +553,163 @@ def load_config(path=None, fallback_defaults: bool = True) -> dict:
                 f"找不到配置文件：{path}"
                 if path else "没有指定配置，且找不到 config/defaults.json。"
             )
-    return normalize_config(migrate_config(load_json(path, label="配置文件")))
+    warnings: list = []
+    cfg = normalize_config(
+        migrate_config(load_json(path, label="配置文件")), warnings=warnings)
+    catalog = load_catalog()[1] if styles_path().exists() else None
+    report = validate_config(cfg, catalog, strict=strict)
+    if report["errors"]:
+        raise SystemExit("配置校验未通过：\n  - " + "\n  - ".join(report["errors"]))
+    for message in warnings + report["warnings"]:
+        if strict:
+            raise SystemExit(f"配置校验未通过：{message}")
+        if not quiet:
+            print(f"警告：{message}", file=sys.stderr)
+    return cfg
 
 
-def save_config(path, cfg: dict) -> None:
-    """原子写回配置。"""
+# --------------------------------------------------------------------------
+# 原子写入与跨进程锁
+# --------------------------------------------------------------------------
+
+
+def _fsync_dir(directory: Path) -> None:
+    """把目录项落盘（POSIX）。失败不影响正确性，忽略即可。"""
+    if os.name == "nt":
+        return
+    try:
+        fd = os.open(str(directory), os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        os.fsync(fd)
+    except OSError:
+        pass
+    finally:
+        os.close(fd)
+
+
+def atomic_write_text(path, text: str, *, mode: int | None = None) -> None:
+    """同目录临时文件 → flush/fsync → 原子替换。
+
+    临时文件名带随机后缀：多个进程同时写同一份文件时不会共用同一个中间文件
+    （共用的话会出现「一个进程替换掉另一个进程正在写的文件」，落盘结果是半截 JSON）。
+    出错时旧文件保持原样，临时文件被清理。
+    """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(
-        json.dumps(cfg, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-    )
-    tmp.replace(path)
+    fd, tmp_name = tempfile.mkstemp(
+        prefix=f".{path.name}.", suffix=".tmp", dir=str(path.parent))
+    tmp = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(text)
+            fh.flush()
+            os.fsync(fh.fileno())
+        if mode is not None:
+            os.chmod(tmp, mode)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            if tmp.exists():
+                tmp.unlink()
+        except OSError:
+            pass
+        raise
+    _fsync_dir(path.parent)
+
+
+def _lock_file(handle) -> None:
+    """对文件句柄加独占锁（非阻塞）。POSIX 用 flock，Windows 用 msvcrt。"""
+    if os.name == "nt":
+        import msvcrt
+
+        handle.seek(0)
+        msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+    else:
+        import fcntl
+
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+
+def _unlock_file(handle) -> None:
+    if os.name == "nt":
+        import msvcrt
+
+        handle.seek(0)
+        try:
+            msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+        except OSError:
+            pass
+    else:
+        import fcntl
+
+        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+@contextlib.contextmanager
+def config_lock(path, timeout: float = LOCK_TIMEOUT):
+    """跨进程互斥锁。
+
+    锁文件独立于配置本身：配置用原子替换写入，锁在被替换掉的旧 inode 上会失效。
+    线程锁不够用——多个宿主进程同时写同一份用户配置是真实场景。
+
+    拿不到锁就报错，不静默降级成「没有保护地写」。
+    """
+    path = Path(path)
+    lock_path = path.parent / (path.name + ".lock")
+    try:
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        handle = open(lock_path, "a+b")
+    except OSError as exc:
+        raise SystemExit(f"打不开配置锁文件：{lock_path}（{exc}）")
+    acquired = False
+    deadline = time.monotonic() + timeout
+    try:
+        if os.name == "nt":
+            handle.seek(0)
+            handle.write(b"\0")
+            handle.flush()
+        while True:
+            try:
+                _lock_file(handle)
+                acquired = True
+                break
+            except OSError:
+                if time.monotonic() >= deadline:
+                    raise SystemExit(
+                        f"等待配置锁超时（{timeout:g}s）：{lock_path}。"
+                        "另一个进程正在写同一份配置，请稍后重试。")
+                time.sleep(0.02)
+        yield
+    finally:
+        if acquired:
+            try:
+                _unlock_file(handle)
+            except OSError:
+                pass
+        handle.close()
+
+
+def save_config(path, cfg: dict, *, verify: bool = True) -> None:
+    """原子写回配置。
+
+    写入前先归一化并校验：非法配置不会落盘，旧配置保持原样。写入后重新读取
+    并归一化，确认落盘内容仍可读——「写完不校验」等于把失败藏起来。
+    """
+    path = Path(path)
+    payload = normalize_config(migrate_config(cfg))
+    atomic_write_text(
+        path, json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+        mode=CONFIG_FILE_MODE)
+    if not verify:
+        return
+    try:
+        written = load_config(path, fallback_defaults=False, quiet=True)
+    except SystemExit as exc:
+        raise SystemExit(f"配置写入后校验失败：{exc}")
+    if written != payload:
+        raise SystemExit("配置写入后校验失败：落盘内容与预期不一致。")
 
 
 def save_history(path, history, limit: int = 50) -> None:
@@ -464,12 +719,8 @@ def save_history(path, history, limit: int = 50) -> None:
     """
     path = Path(path)
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_name(path.name + ".tmp")
-        tmp.write_text(
-            json.dumps(list(history)[-limit:], ensure_ascii=False), encoding="utf-8"
-        )
-        tmp.replace(path)
+        atomic_write_text(
+            path, json.dumps(list(history)[-limit:], ensure_ascii=False))
     except OSError as exc:
         print(f"警告：历史文件写入失败（{exc}），本轮未落盘：{path}", file=sys.stderr)
 
@@ -479,9 +730,11 @@ def apply_config_patch(cfg: dict, patch: dict) -> dict:
 
     - 只接受 CONFIG_KEYS 里的键，未知键直接报错（防止拼错静默写进配置）
     - 值为 None 表示「不改动」；switch / kaomoji 是字典，做键级合并
+    - 返回新对象，不改动传入的 cfg
     """
     if not isinstance(patch, dict):
         raise SystemExit("配置变更必须是 JSON 对象。")
+    cfg = _copy_config(cfg)
     for key, value in patch.items():
         if value is None:
             continue
@@ -490,10 +743,29 @@ def apply_config_patch(cfg: dict, patch: dict) -> dict:
                 f"未知配置键：{key}。可用：{', '.join(sorted(CONFIG_KEYS))}"
             )
         if key in ("switch", "kaomoji") and isinstance(value, dict):
-            cfg.setdefault(key, {}).update(value)
+            current = cfg.get(key)
+            merged = dict(current) if isinstance(current, dict) else {}
+            merged.update(value)
+            cfg[key] = merged
         else:
             cfg[key] = value
     return cfg
+
+
+def update_config_file(path, patch: dict, *, fallback_defaults: bool = True,
+                       strict: bool = False, timeout: float = LOCK_TIMEOUT) -> dict:
+    """加锁的「读—改—写」，配置更新的唯一入口。
+
+    锁内重新读取当前配置再合并补丁：并发更新时不会用一份旧读覆盖掉别人刚写入
+    的、不相关的字段。写完重新校验，失败时旧配置原样保留。
+    """
+    path = Path(path)
+    with config_lock(path, timeout=timeout):
+        cfg = load_config(path, fallback_defaults=fallback_defaults, strict=strict)
+        merged = apply_config_patch(cfg, patch)
+        merged = normalize_config(migrate_config(merged))
+        save_config(path, merged, verify=True)
+        return merged
 
 
 def validate_style_ids(ids, catalog: dict) -> None:
