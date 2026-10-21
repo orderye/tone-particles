@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "note": "主评测集：6 类各 10 条，共 60 条。style 字段指定该条期望使用的风格，密度与颜文字检查据此取该风格的区间与颜文字库。min_chars 是回复长度下限——README 已说明 20–60 字的短句按工具口径密度普遍偏高，标定要用 150–400 字的完整回复，短文本不计入密度通过率。",
+  "note": "主评测集：6 类各 10 条，另加 2 条锚点专用用例，共 62 条。style 字段指定该条期望使用的风格，密度与颜文字检查据此取该风格的区间与颜文字库。min_chars 是回复长度下限——README 已说明 20–60 字的短句按工具口径密度普遍偏高，标定要用 150–400 字的完整回复，短文本不计入密度通过率。anchors 声明必须原样出现的关键片段（数字、日期、命令、代码、URL 等），由「语义锚点保真」这一确定性指标校验；它守住「关键片段没被改」，不等于整段语义等价。",
   "categories": ["闲聊", "知识问答", "代码与技术", "情绪安慰", "拒绝与纠错", "长文"],
   "cases": [
     {"id": "chat-01", "category": "闲聊", "style": "S04", "scene": "normal", "min_chars": 150, "user_input": "最近工作忙得脚不沾地，连周末都在加班。"},
@@ -9,31 +9,31 @@
     {"id": "chat-04", "category": "闲聊", "style": "S02", "scene": "normal", "min_chars": 150, "user_input": "下周要出差三天，行李到现在还没开始收。"},
     {"id": "chat-05", "category": "闲聊", "style": "S07", "scene": "normal", "min_chars": 150, "user_input": "今天天气特别好，突然想出去走一走。"},
     {"id": "chat-06", "category": "闲聊", "style": "S03", "scene": "normal", "min_chars": 150, "user_input": "我学做菜三个月了，现在炒蛋终于不会糊锅了。"},
-    {"id": "chat-07", "category": "闲聊", "style": "S05", "scene": "normal", "min_chars": 150, "user_input": "室友的作息和我完全相反，我得调整一下自己的生物钟。"},
+    {"id": "chat-07", "category": "闲聊", "style": "S05", "scene": "normal", "min_chars": 150, "user_input": "室友的作息和我完全相反，我得调整一下自己的生物钟。", "anchors": ["自然光"]},
     {"id": "chat-08", "category": "闲聊", "style": "S12", "scene": "normal", "min_chars": 150, "user_input": "周末想去看展，但不知道选哪个好。"},
     {"id": "chat-09", "category": "闲聊", "style": "S14", "scene": "normal", "min_chars": 150, "user_input": "刚换了个新的通勤路线，发现了一家很不错的包子铺。"},
     {"id": "chat-10", "category": "闲聊", "style": "S19", "scene": "normal", "min_chars": 150, "user_input": "我妈说我最近胖了，我该怎么回她。"},
 
-    {"id": "chat-11", "category": "知识问答", "style": "S17", "scene": "normal", "min_chars": 150, "user_input": "Python 里的列表推导式和生成器表达式有什么区别？"},
+    {"id": "chat-11", "category": "知识问答", "style": "S17", "scene": "normal", "min_chars": 150, "user_input": "Python 里的列表推导式和生成器表达式有什么区别？", "anchors": ["列表推导式", "生成器表达式"]},
     {"id": "chat-12", "category": "知识问答", "style": "S01", "scene": "normal", "min_chars": 150, "user_input": "简单解释一下 HTTPS 里的 TLS 握手过程。"},
-    {"id": "chat-13", "category": "知识问答", "style": "S21", "scene": "normal", "min_chars": 150, "user_input": "家用路由器和光猫分别起什么作用？"},
-    {"id": "chat-14", "category": "知识问答", "style": "S20", "scene": "normal", "min_chars": 150, "user_input": "什么是数据库的 ACID 特性？"},
+    {"id": "chat-13", "category": "知识问答", "style": "S21", "scene": "normal", "min_chars": 150, "user_input": "家用路由器和光猫分别起什么作用？", "anchors": ["光猫", "路由器"]},
+    {"id": "chat-14", "category": "知识问答", "style": "S20", "scene": "normal", "min_chars": 150, "user_input": "什么是数据库的 ACID 特性？", "anchors": ["原子性", "一致性", "隔离性", "持久性"]},
     {"id": "chat-15", "category": "知识问答", "style": "S15", "scene": "normal", "min_chars": 150, "user_input": "台风是怎么形成的？"},
     {"id": "chat-16", "category": "知识问答", "style": "S17", "scene": "normal", "min_chars": 150, "user_input": "怎么理解「机会成本」这个经济学概念？"},
     {"id": "chat-17", "category": "知识问答", "style": "S20", "scene": "normal", "min_chars": 150, "user_input": "咖啡因对身体的影响主要体现在哪些方面？"},
-    {"id": "chat-18", "category": "知识问答", "style": "S17", "scene": "high_risk", "min_chars": 150, "user_input": "核磁共振和 CT 扫描在原理上有什么不同？检查前要注意什么？"},
+    {"id": "chat-18", "category": "知识问答", "style": "S17", "scene": "high_risk", "min_chars": 150, "user_input": "核磁共振和 CT 扫描在原理上有什么不同？检查前要注意什么？", "anchors": ["磁共振", "CT"]},
     {"id": "chat-19", "category": "知识问答", "style": "S01", "scene": "normal", "min_chars": 150, "user_input": "太阳系里有哪些矮行星？"},
     {"id": "chat-20", "category": "知识问答", "style": "S14", "scene": "normal", "min_chars": 150, "user_input": "微波炉加热食物的原理是什么？为什么金属不能放进去？"},
 
-    {"id": "chat-21", "category": "代码与技术", "style": "S10", "scene": "code", "min_chars": 150, "user_input": "这段 Python 代码报了个 KeyError，能帮我看看是哪里的问题吗？\n```python\ndef count(items):\n    total = 0\n    for name in items:\n        total += items[name]\n    return total\n```"},
+    {"id": "chat-21", "category": "代码与技术", "style": "S10", "scene": "code", "min_chars": 150, "user_input": "这段 Python 代码报了个 KeyError，能帮我看看是哪里的问题吗？\n```python\ndef count(items):\n    total = 0\n    for name in items:\n        total += items[name]\n    return total\n```", "anchors": ["KeyError", "items.values()"]},
     {"id": "chat-22", "category": "代码与技术", "style": "S05", "scene": "code", "min_chars": 150, "user_input": "我的 Docker 容器启动后立刻退出了，日志显示端口被占用。"},
-    {"id": "chat-23", "category": "代码与技术", "style": "S17", "scene": "code", "min_chars": 150, "user_input": "这条 SQL 查询在大表上跑得很慢，怎么优化？\n```sql\nSELECT * FROM orders o JOIN customers c ON o.cid = c.id WHERE o.created_at > '2024-01-01';\n```"},
+    {"id": "chat-23", "category": "代码与技术", "style": "S17", "scene": "code", "min_chars": 150, "user_input": "这条 SQL 查询在大表上跑得很慢，怎么优化？\n```sql\nSELECT * FROM orders o JOIN customers c ON o.cid = c.id WHERE o.created_at > '2024-01-01';\n```", "anchors": ["索引"]},
     {"id": "chat-24", "category": "代码与技术", "style": "S16", "scene": "code", "min_chars": 150, "user_input": "git rebase 和 git merge 该怎么选？"},
-    {"id": "chat-25", "category": "代码与技术", "style": "S13", "scene": "code", "min_chars": 150, "user_input": "前端接口偶尔返回 504，怎么排查？"},
-    {"id": "chat-26", "category": "代码与技术", "style": "S18", "scene": "code", "min_chars": 150, "user_input": "这个正则表达式为什么匹配不到我要的内容？\n```js\nconst re = /\\d{4}-\\d{2}-\\d{2}/\nre.test(\"2024-05-01\")\n```"},
-    {"id": "chat-27", "category": "代码与技术", "style": "S06", "scene": "code", "min_chars": 150, "user_input": "帮我看下这个 Bash 脚本里的重定向写对了没有。\n```bash\ncat file.txt > /dev/null 2>&1 &\n```"},
+    {"id": "chat-25", "category": "代码与技术", "style": "S13", "scene": "code", "min_chars": 150, "user_input": "前端接口偶尔返回 504，怎么排查？", "anchors": ["504"]},
+    {"id": "chat-26", "category": "代码与技术", "style": "S18", "scene": "code", "min_chars": 150, "user_input": "这个正则表达式为什么匹配不到我要的内容？\n```js\nconst re = /\\d{4}-\\d{2}-\\d{2}/\nre.test(\"2024-05-01\")\n```", "anchors": ["2024-05-01"]},
+    {"id": "chat-27", "category": "代码与技术", "style": "S06", "scene": "code", "min_chars": 150, "user_input": "帮我看下这个 Bash 脚本里的重定向写对了没有。\n```bash\ncat file.txt > /dev/null 2>&1 &\n```", "anchors": ["/dev/null", "2>&1"]},
     {"id": "chat-28", "category": "代码与技术", "style": "S01", "scene": "code", "min_chars": 150, "user_input": "为什么我的 Python 程序内存占用一直涨？"},
-    {"id": "chat-29", "category": "代码与技术", "style": "S11", "scene": "code", "min_chars": 150, "user_input": "CORS 报错具体是什么原因，怎么解决？"},
+    {"id": "chat-29", "category": "代码与技术", "style": "S11", "scene": "code", "min_chars": 150, "user_input": "CORS 报错具体是什么原因，怎么解决？", "anchors": ["Access-Control-Allow-Origin"]},
     {"id": "chat-30", "category": "代码与技术", "style": "S04", "scene": "code", "min_chars": 150, "user_input": "这个 systemd 服务一直起不来，帮我分析下配置。\n```ini\n[Service]\nExecStart=/usr/bin/python3 /opt/app/run.py\nRestart=always\n```"},
 
     {"id": "chat-31", "category": "情绪安慰", "style": "S11", "scene": "low_mood", "min_chars": 150, "user_input": "今天被上司当众批评了，感觉特别难受。"},
@@ -67,6 +67,8 @@
     {"id": "chat-57", "category": "长文", "style": "S09", "scene": "normal", "min_chars": 300, "user_input": "写一份求职自我介绍。"},
     {"id": "chat-58", "category": "长文", "style": "S12", "scene": "normal", "min_chars": 300, "user_input": "帮我写一篇科普短文，解释一下潮汐。"},
     {"id": "chat-59", "category": "长文", "style": "S14", "scene": "normal", "min_chars": 300, "user_input": "帮我列一个详细的搬家清单和流程。"},
-    {"id": "chat-60", "category": "长文", "style": "S01", "scene": "normal", "min_chars": 300, "user_input": "帮我写一份部门周报模板说明。"}
+    {"id": "chat-60", "category": "长文", "style": "S01", "scene": "normal", "min_chars": 300, "user_input": "帮我写一份部门周报模板说明。"},
+    {"id": "chat-61", "category": "知识问答", "style": "S17", "scene": "high_risk", "min_chars": 150, "user_input": "我朋友突然胸痛、呼吸困难，需要马上叫救护车。我们现在在中国大陆，应该打哪个电话？", "anchors": ["120"]},
+    {"id": "chat-62", "category": "代码与技术", "style": "S04", "scene": "code", "min_chars": 150, "user_input": "我们的接口文档放在 https://example.com/docs/api ，麻烦在回复里给我一句提示，让用户点进去看完整说明。", "anchors": ["https://example.com/docs/api"]}
   ]
 }

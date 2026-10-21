@@ -66,7 +66,9 @@ def generate_all(backend, case_sets, responses_dir, *, density_level="standard",
                 continue
             try:
                 reply = backend.generate(system, user)
-            except Exception as exc:  # noqa: BLE001 - 单条失败不应中断整批
+            except (Exception, SystemExit) as exc:
+                # SystemExit 也是 BaseException 的子类，普通的 except Exception
+                # 接不住它——后端抛出的接口错误会直接把整批评测打断。
                 log(f"  ! {case['id']} 生成失败：{exc}")
                 stats["failed"] += 1
                 continue

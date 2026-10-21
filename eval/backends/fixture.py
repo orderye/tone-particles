@@ -29,6 +29,14 @@ class FixtureBackend(Backend):
             return False, f"档案目录不存在：{self.responses_dir}"
         return True, f"使用档案目录 {self.responses_dir}"
 
+    def metadata(self) -> dict:
+        return {
+            "后端": self.name,
+            "模型": "人工评审档案（fixtures/judgments/）",
+            "采样参数": "不适用",
+            "档案目录": str(self.responses_dir),
+        }
+
     def generate(self, system: str, user: str) -> str:
         raise RuntimeError(
             "fixture 后端只读档案，不支持生成回复；请用 chat_completions / messages_api。")

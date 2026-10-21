@@ -61,6 +61,13 @@ def judge(responses: dict, cases: dict, *, kaomoji_enabled: bool = False) -> dic
                  "开启态下颜文字须取自该风格库、单条 ≤1、不与 emoji 同条、不出现在代码与表格中。"))
     if missing:
         detail += f" 另有 {len(missing)} 条用例缺回复，未计入。"
+    counts = {
+        "passed": checked - bad,
+        "failed": bad,
+        "not_evaluated": len(missing),
+        "blocked": 0,
+        "denominator": checked,
+    }
     return metric(
         f"颜文字（{state}态）",
         "100% 符合",
@@ -68,6 +75,9 @@ def judge(responses: dict, cases: dict, *, kaomoji_enabled: bool = False) -> dic
         bad == 0,
         detail=detail,
         failures=failures,
+        counts=counts,
+        denominator=checked,
+        denominator_note="实际检查的回复条数（缺回复不计入分母）",
     )
 
 
@@ -113,4 +123,13 @@ def frequency(cases: dict, responses: dict, kaomoji_enabled: bool = True) -> dic
         not failures,
         detail="按风格聚合回复统计：每条回复的颜文字数之和不应超过倾向预算 × 回复数。",
         failures=failures,
+        counts={
+            "passed": len(per_style) - len(failures),
+            "failed": len(failures),
+            "not_evaluated": 0,
+            "blocked": 0,
+            "denominator": len(per_style),
+        },
+        denominator=len(per_style),
+        denominator_note="有回复的风格数量",
     )

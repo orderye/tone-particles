@@ -121,4 +121,13 @@ def judge(runs: int = RUNS) -> dict:
         not failures,
         detail="；".join(details) + f"。每个场景模拟 {runs} 次。",
         failures=failures,
+        counts={
+            "passed": passed_scenarios,
+            "failed": len(failures),
+            "not_evaluated": 0,
+            "blocked": 0,
+            "denominator": len(SCENARIOS),
+        },
+        denominator=len(SCENARIOS),
+        denominator_note="模拟场景数量",
     )

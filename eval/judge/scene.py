@@ -80,6 +80,13 @@ def judge(responses: dict, cases: dict) -> dict:
               "情绪低落、危机、正式要求与非中文。")
     if missing:
         detail += f" 另有 {len(missing)} 条用例缺回复，未计入。"
+    counts = {
+        "passed": checked - bad,
+        "failed": bad,
+        "not_evaluated": len(missing),
+        "blocked": 0,
+        "denominator": checked,
+    }
     return metric(
         "场景自适应",
         "全部正确降档或关闭",
@@ -87,4 +94,7 @@ def judge(responses: dict, cases: dict) -> dict:
         bad == 0,
         detail=detail,
         failures=failures,
+        counts=counts,
+        denominator=checked,
+        denominator_note="实际检查的回复条数（缺回复不计入分母）",
     )

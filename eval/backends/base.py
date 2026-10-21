@@ -25,6 +25,13 @@ class Backend:
         """返回 (是否可用, 原因)。不可用时原因会写进报告。"""
         return False, "未配置后端"
 
+    def metadata(self) -> dict:
+        """评审后端的元信息，进报告。
+
+        取不到的写 unknown——报告里的模型名、温度、版本不能编。
+        """
+        return {"后端": self.name, "模型": "unknown", "采样参数": "unknown"}
+
     def generate(self, system: str, user: str) -> str:
         raise NotImplementedError
 

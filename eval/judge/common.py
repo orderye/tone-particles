@@ -203,6 +203,20 @@ def distinctive_particles() -> set:
 # 指标容器
 # --------------------------------------------------------------------------
 
+# 指标的四种状态。区分它们是评测可信度的前提：
+# 「没测到」既不是「达标」也不是「不达标」，把它渲染成任何一种都是误导。
+STATUS_PASSED = "passed"
+STATUS_FAILED = "failed"
+STATUS_NOT_EVALUATED = "not_evaluated"
+STATUS_BLOCKED = "blocked"
+
+STATUS_LABEL = {
+    STATUS_PASSED: "通过",
+    STATUS_FAILED: "未达标",
+    STATUS_NOT_EVALUATED: "未评测",
+    STATUS_BLOCKED: "被阻塞",
+}
+
 
 def answered(verdict, key: str) -> bool:
     """评审结果里是否真的给出了结论（对应字段存在且非空）。
@@ -216,26 +230,91 @@ def answered(verdict, key: str) -> bool:
 
 
 def metric(name, threshold, value, passed, *, skipped=False, detail="",
-           failures=None, notes=None) -> dict:
+           failures=None, notes=None, blocked=None, counts=None,
+           requires_model=False, denominator=None, denominator_note="",
+           rubric_version="") -> dict:
     """指标容器。
 
     failures 是「真违规/不达标」；notes 是「未计入」的条目（缺回复、未作答、
-    长度不足）。两者分开渲染，避免把测量缺口显示成失败。
+    长度不足）；blocked 是「因系统错误没能得出结论」的条目。三者分开渲染，
+    避免把测量缺口显示成失败。
+
+    passed 保留旧字段语义（True / False / None），status 是新增的明确状态：
+        passed=True  → passed
+        passed=False → failed
+        passed=None  → not_evaluated
+    skipped=True 与 status=not_evaluated 等价（兼容旧字段）。
     """
+    failures = list(failures or [])
+    notes = list(notes or [])
+    blocked = list(blocked or [])
+
+    if blocked and passed is None:
+        status = STATUS_BLOCKED
+    elif skipped or passed is None:
+        status = STATUS_NOT_EVALUATED
+    elif passed:
+        status = STATUS_PASSED
+    else:
+        status = STATUS_FAILED
+
+    if counts is None:
+        counts = {
+            "passed": 0,
+            "failed": len(failures),
+            "not_evaluated": len(notes),
+            "blocked": len(blocked),
+            "denominator": denominator if denominator is not None else 0,
+        }
+    counts = dict(counts)
+    counts.setdefault("denominator_note", denominator_note)
+
     return {
         "metric": name,
         "threshold": threshold,
         "value": value,
         "passed": passed,
         "skipped": skipped,
+        "status": status,
         "detail": detail,
-        "failures": failures or [],
-        "notes": notes or [],
+        "failures": failures,
+        "notes": notes,
+        "blocked": blocked,
+        "counts": counts,
+        "requires_model": requires_model,
+        "denominator": counts.get("denominator"),
+        "denominator_note": denominator_note,
+        "rubric_version": rubric_version,
     }
 
 
-def skipped_metric(name, threshold, reason) -> dict:
-    return metric(name, threshold, "未评测", None, skipped=True, detail=reason)
+def skipped_metric(name, threshold, reason, **kwargs) -> dict:
+    """未评测：没有后端、缺回复、评审没作答等「没测到」的情况。"""
+    return metric(name, threshold, "未评测", None, skipped=True, detail=reason, **kwargs)
+
+
+def blocked_metric(name, threshold, reason, *, blocked=None, **kwargs) -> dict:
+    """被阻塞：评测输入或系统错误导致没法得出结论（与「未评测」分开）。"""
+    entries = blocked or [{"reason": reason}]
+    return metric(name, threshold, "被阻塞", None, skipped=False, detail=reason,
+                  blocked=entries, **kwargs)
+
+
+def call_judge(backend, rubric: str, payload: dict) -> tuple:
+    """调用评审后端，区分「评审没给结论」与「评审过程出错」。
+
+    返回 (verdict, blocked_reason)：
+    - blocked_reason 为 None：调用成功。verdict 可能仍是空字典——那是评审没作答。
+    - blocked_reason 非 None：调用过程出错（网络、HTTP、返回格式不对），
+      该条用例记为「被阻塞」，不能算成「目标回复失败」。
+    """
+    try:
+        verdict = backend.judge(rubric, payload)
+    except (Exception, SystemExit) as exc:
+        return {}, f"评审后端出错：{type(exc).__name__}: {exc}"
+    if not isinstance(verdict, dict):
+        return {}, "评审后端返回的不是 JSON 对象。"
+    return verdict, None
 
 
 def missing_replies(cases: dict, responses: dict) -> list:

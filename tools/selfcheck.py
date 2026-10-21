@@ -37,6 +37,7 @@ TEST_FILES = [
     "tests/test_config.py",
     "tests/test_protocol.py",
     "tests/test_safety.py",
+    "tests/test_eval.py",
 ]
 
 RESULTS: list = []
@@ -173,6 +174,12 @@ def check_tests() -> None:
         run_command(f"单元测试：{path}", [path])
 
 
+def check_eval() -> None:
+    """评测体系的两个入口：用例结构校验与离线确定性评测。"""
+    run_command("评测：用例结构校验", ["eval/validate_cases.py"])
+    run_command("评测：确定性指标（离线）", ["eval/run.py", "--json"])
+
+
 def check_version() -> None:
     """版本号一致性：VERSION（单一来源）、README、MCP 服务、styles.json。"""
     sys.path.insert(0, str(ROOT / "tools"))
@@ -202,6 +209,7 @@ def main() -> int:
     check_kaomoji_detection()
     check_version()
     check_cli()
+    check_eval()
     check_tests()
 
     failed = [(name, detail) for name, ok, detail in RESULTS if not ok]

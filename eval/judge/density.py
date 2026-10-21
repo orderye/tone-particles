@@ -85,6 +85,14 @@ def judge(responses: dict, cases: dict, *, density_level: str = "standard",
         }
         for item in too_short
     ]
+    notes.extend({"case_id": case_id, "reason": "缺回复，未计入"} for case_id in missing)
+    counts = {
+        "passed": in_range,
+        "failed": len(failures),
+        "not_evaluated": len(notes),
+        "blocked": 0,
+        "denominator": samples,
+    }
     return metric(
         "助词密度",
         "≥90% 落入风格区间",
@@ -93,4 +101,7 @@ def judge(responses: dict, cases: dict, *, density_level: str = "standard",
         detail=detail,
         failures=failures,
         notes=notes,
+        counts=counts,
+        denominator=samples,
+        denominator_note="长度达标的回复条数（长度不足与缺回复不计入分母）",
     )

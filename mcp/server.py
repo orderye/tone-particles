@@ -29,7 +29,7 @@ from tools import TOOL_DESCRIPTIONS, Tools, call_tool  # noqa: E402
 
 PROTOCOL_VERSION = "2024-11-05"
 SERVER_NAME = "tone-particles"
-SERVER_VERSION = "0.2.2"
+SERVER_VERSION = "0.3.0"
 
 PARSE_ERROR = -32700
 INVALID_REQUEST = -32600

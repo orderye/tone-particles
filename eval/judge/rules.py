@@ -43,6 +43,13 @@ def judge(responses: dict, cases: dict, *, density_level: str = "standard") -> d
         else f"共检查 {checked} 条回复，全部通过。"
     if missing:
         detail += f" 另有 {len(missing)} 条用例缺回复，未计入。"
+    counts = {
+        "passed": checked - bad,
+        "failed": bad,
+        "not_evaluated": len(missing),
+        "blocked": 0,
+        "denominator": checked,
+    }
     return metric(
         "硬规则",
         "100% 无违规",
@@ -50,4 +57,7 @@ def judge(responses: dict, cases: dict, *, density_level: str = "standard") -> d
         bad == 0,
         detail=detail,
         failures=failures,
+        counts=counts,
+        denominator=checked,
+        denominator_note="实际检查的回复条数（缺回复不计入分母）",
     )

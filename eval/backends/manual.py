@@ -27,6 +27,14 @@ class ManualBackend(Backend):
     def available(self):
         return True, "人工录入模式"
 
+    def metadata(self) -> dict:
+        return {
+            "后端": self.name,
+            "模型": "人工评审",
+            "采样参数": "不适用",
+            "档案目录": str(self.judgments_dir),
+        }
+
     def generate(self, system: str, user: str) -> str:
         raise RuntimeError(
             "manual 后端不支持生成回复；请把回复手工放进 fixtures/responses/，"

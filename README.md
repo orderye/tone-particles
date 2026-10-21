@@ -1,6 +1,6 @@
 # 语气助词 Skill（tone-particles）
 
-版本 0.2.2 ｜ 对应 PRD v0.1 ｜ 21 种中文口吻风格
+版本 0.3.0 ｜ 对应 PRD v0.1 ｜ 21 种中文口吻风格
 
 仓库：[GitHub](https://github.com/orderye/tone-particles) ｜ [CNB 镜像](https://cnb.cool/toroyxxx/tone-particles) ｜ [Releases](https://github.com/orderye/tone-particles/releases)
 
@@ -87,7 +87,7 @@ git clone https://github.com/orderye/tone-particles.git .skills/tone-particles
 git clone https://cnb.cool/toroyxxx/tone-particles.git ~/.skills/tone-particles
 ```
 
-也可以直接下载 Release 里的 `tone-particles-0.2.2.zip` 解压后放入 skills 目录。
+也可以直接下载 Release 里的 `tone-particles-0.3.0.zip` 解压后放入 skills 目录。
 
 手动复制的方式同样可用，在 `tone-particles` 的上一级目录执行：
 
@@ -101,7 +101,7 @@ mkdir -p ~/.skills && cp -R tone-particles ~/.skills/
 
 ### 支持 zip 导入的平台
 
-从 [Releases](https://github.com/orderye/tone-particles/releases) 下载 `tone-particles-0.2.2.zip` 后上传（zip 顶层是 `tone-particles/` 目录，`SKILL.md` 位于该目录内）。不同版本的 Skills 入口位置可能变化，以官方文档为准。
+从 [Releases](https://github.com/orderye/tone-particles/releases) 下载 `tone-particles-0.3.0.zip` 后上传（zip 顶层是 `tone-particles/` 目录，`SKILL.md` 位于该目录内）。不同版本的 Skills 入口位置可能变化，以官方文档为准。
 
 维护者重建分发包用 `python3 tools/package.py`：白名单构建（只含 README、SKILL.md、config、references、scripts、styles）、顶层固定 `tone-particles/`、条目排序与固定时间戳保证同样内容产出字节一致的包；版本号读根目录 `VERSION`，并校验 README 与 `mcp/server.py` 的版本串一致。
 
@@ -303,12 +303,20 @@ python3 scripts/check_density.py reply.txt --style S09 --strict
 
 ```bash
 # 一条命令跑全部自检：四个 config JSON、21 风格完整性、
-# md↔json 一致性（密度 / 颜文字倾向 / 签名元素）、版本号一致性、CLI 冒烟、六个测试文件
+# md↔json 一致性（密度 / 颜文字倾向 / 签名元素）、版本号一致性、CLI 冒烟、
+# 用例结构校验、离线确定性评测、七个测试文件
 python3 tools/selfcheck.py
 
 # 端到端评测（确定性指标；需模型的三项标为「未评测」）
 python3 eval/run.py
+
+# 严格验收：模型类指标必须真的评测过，否则退出码 2
+python3 eval/run.py --strict
 ```
+
+评测指标分四种状态：**通过 / 未达标 / 未评测 / 被阻塞**。「未评测」是「没跑成」
+（没有后端、缺回复、评审没作答），「被阻塞」是「评测过程出错」。两者都不是通过，
+报告里分开统计、分开渲染。详见 [`eval/README.md`](eval/README.md)。
 
 单元测试在 `tests/`（纯标准库，不依赖 pytest），也可以单独跑：
 
@@ -319,6 +327,7 @@ python3 tests/test_mcp.py       # MCP 协议与四个工具
 python3 tests/test_config.py    # 配置读写：原子写、跨进程锁、并发、失败路径
 python3 tests/test_protocol.py  # 子进程协议契约：MCP stdio 与宿主 CLI
 python3 tests/test_safety.py    # 安全硬规则：文档与用例的一致性回归
+python3 tests/test_eval.py      # 评测体系：状态语义、严格模式、报告一致性
 ```
 
 ## 设计说明与已知限制
@@ -330,7 +339,8 @@ python3 tests/test_safety.py    # 安全硬规则：文档与用例的一致性�
 - **颜文字依赖字体**：不同平台显示不一致，默认关闭；出现乱码时按 `references/lexicon.md` 退回纯 ASCII。
 - **不改变内容**：本 skill 只改表达层，但不能替代事实核查与安全审查。
 - **系统提示词注入需要宿主开发**：`compose_prompt.py` 已提供拼装能力，调用时机、历史维护与缓存由宿主负责；`integrations/` 是可直接参考的完整实现。
-- **评测的三项指标依赖模型**：风格盲测、内容保真、融合识别需要评审模型；没有配置后端时这三项标为「未评测」，其余指标照常产出。
+- **评测的三项指标依赖模型**：风格盲测、内容保真、融合识别需要评审模型；没有配置后端时这三项标为「未评测」，其余指标照常产出。「未评测」既不是通过也不是不达标——发布候选验收请用 `python3 eval/run.py --strict`（模型类指标未评测时返回退出码 2）。
+- **提示词不是语义保证**：当前的主要形式是把风格说明加进 system prompt，运行时手上并没有同一条问题的无风格基线回复，因此**运行时做不了真正的双文本语义比对**。评测里的「内容保真」比较的是「原回复」与「剥掉语气后的正文」，验证的是去掉语气不丢信息；「语义锚点保真」守住的是数字、日期、命令、代码、URL 这类关键片段没被改。整段语义等价仍需模型或人工评审，详见 [`eval/README.md`](eval/README.md)。
 
 ## 安全
 
@@ -338,6 +348,7 @@ python3 tests/test_safety.py    # 安全硬规则：文档与用例的一致性�
 
 ## 版本
 
+- `0.3.0`：评测引入「通过 / 未达标 / 未评测 / 被阻塞」四种状态并新增 `--strict` 严格验收开关；报告补上仓库版本、Git commit、Python 版本、评测数据哈希、后端元信息与分母定义；新增确定性的「语义锚点保真」指标与用例结构校验 `eval/validate_cases.py`；评审通道出错不再被算成「目标回复失败」；后端超时与重试上限可配。
 - `0.2.2`：配置写入改为原子写 + 跨进程锁 + 写前写后校验，杜绝并发写坏配置与「写入失败却返回成功」；MCP 增加 schema 驱动的参数校验、工具执行异常不再拖垮服务；宿主适配层改为「提示词拼装成功后才提交轮次状态」；新增 `user_dir` / `TONE_PARTICLES_USER_DIR` 隔离多用户配置与历史；新增 `tests/test_config.py`、`tests/test_protocol.py`、`tests/test_safety.py` 与 `tools/version.py`（版本号同步）。
 - `0.2.1`：修复宿主适配层丢弃配置权重（宿主注入的配比与 CLI 不一致）、`--root` 不生效、MCP 静默写入未知配置键三处缺陷；eval 判分不再把「评审未作答 / 回复长度不足」显示成失败；边界字符集、违规类型、枚举与颜文字字符集收敛为单一来源，并新增 md↔json 一致性校验；补充 `tests/` 单元测试与 `tools/`（自检、可复现打包）。
 - `0.2.0`：抽出共享核心 `scripts/_core.py`，三个 CLI 的配置、密度区间与抽样语义收敛到一处实现；补齐颜文字违规规则、关系位禁用词与密度档位校验；新增评测体系（`eval/`）、宿主适配层（`integrations/`）与 MCP 服务（`mcp/`）。对应 PRD M4–M6。

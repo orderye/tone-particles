@@ -14,16 +14,22 @@
     TONE_MSG_AUTH_HEADER    默认 x-api-key
     TONE_MSG_VERSION_HEADER 可选，设置了才发送
     TONE_MSG_VERSION        版本头的取值
+    TONE_MSG_TIMEOUT        单次请求超时秒数，默认 120
+    TONE_MSG_RETRIES        网络 / 5xx 的重试上限，默认 0（不重试）
 """
 
 from __future__ import annotations
 
 import json
 import os
+import time
 import urllib.error
 import urllib.request
 
 from .base import Backend
+
+DEFAULT_TIMEOUT = 120.0
+DEFAULT_RETRIES = 0
 
 
 class MessagesApiBackend(Backend):
@@ -31,7 +37,8 @@ class MessagesApiBackend(Backend):
     can_generate = True
 
     def __init__(self, base_url=None, api_key=None, model=None, path=None,
-                 auth_header=None, version_header=None, version=None):
+                 auth_header=None, version_header=None, version=None,
+                 timeout=None, retries=None):
         self.base_url = (base_url or os.environ.get("TONE_MSG_BASE_URL") or "").rstrip("/")
         self.api_key = api_key or os.environ.get("TONE_MSG_API_KEY", "")
         self.model = model or os.environ.get("TONE_MSG_MODEL", "")
@@ -40,6 +47,12 @@ class MessagesApiBackend(Backend):
         self.version_header = (version_header if version_header is not None
                                 else os.environ.get("TONE_MSG_VERSION_HEADER", ""))
         self.version = version if version is not None else os.environ.get("TONE_MSG_VERSION", "")
+        raw_timeout = timeout if timeout is not None else os.environ.get(
+            "TONE_MSG_TIMEOUT", DEFAULT_TIMEOUT)
+        self.timeout = float(raw_timeout)
+        raw_retries = retries if retries is not None else os.environ.get(
+            "TONE_MSG_RETRIES", DEFAULT_RETRIES)
+        self.retries = max(0, int(raw_retries))
 
     def available(self):
         missing = [name for name, value in
@@ -63,14 +76,25 @@ class MessagesApiBackend(Backend):
             data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
             headers=headers,
         )
-        try:
-            with urllib.request.urlopen(request, timeout=180) as response:
-                return json.loads(response.read().decode("utf-8"))
-        except urllib.error.HTTPError as exc:
-            detail = exc.read().decode("utf-8", "replace")[:400]
-            raise SystemExit(f"模型接口返回 {exc.code}：{detail}")
-        except urllib.error.URLError as exc:
-            raise SystemExit(f"连不上模型接口 {self.base_url}：{exc.reason}")
+        last_error = None
+        for attempt in range(self.retries + 1):
+            try:
+                with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                    return json.loads(response.read().decode("utf-8"))
+            except urllib.error.HTTPError as exc:
+                detail = exc.read().decode("utf-8", "replace")[:400]
+                if exc.code < 500 or attempt >= self.retries:
+                    raise SystemExit(f"模型接口返回 {exc.code}：{detail}")
+                last_error = f"HTTP {exc.code}：{detail}"
+            except urllib.error.URLError as exc:
+                if attempt >= self.retries:
+                    raise SystemExit(f"连不上模型接口 {self.base_url}：{exc.reason}")
+                last_error = str(exc.reason)
+            except json.JSONDecodeError as exc:
+                raise SystemExit(f"模型接口返回的不是合法 JSON：{exc}")
+            if attempt < self.retries:
+                time.sleep(min(2 ** attempt, 5))
+        raise SystemExit(f"模型接口请求失败：{last_error}")
 
     def generate(self, system: str, user: str) -> str:
         data = self._post(self.path, {
