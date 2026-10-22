@@ -1,5 +1,8 @@
 # 语气助词 Skill（tone-particles）
 
+<!-- kimi-badge -->
+[![powered by KimiCode](assets/kimi-badge.svg)](https://www.kimi.com/code)
+
 版本 0.4.0 ｜ 21 种中文口吻风格 ｜ 四种运行模式 ｜ Python 3.9+ ｜ 零第三方依赖
 
 仓库：[GitHub](https://github.com/orderye/tone-particles) ｜ [CNB 镜像](https://cnb.cool/toroyxxx/tone-particles) ｜ [Releases](https://github.com/orderye/tone-particles/releases)
@@ -56,6 +59,8 @@ tone-particles/
 │   ├── pick_style.py        # 随机 / 加权选风格
 │   ├── compose_prompt.py    # 生成融合提示词
 │   └── check_density.py     # 密度与硬规则检测
+├── assets/
+│   └── kimi-badge.svg       # README 顶部的署名徽章
 ├── eval/                    # 评测体系（不随包分发）
 │   ├── run.py               # 评测入口
 │   ├── validate_cases.py    # 用例结构校验
@@ -84,7 +89,7 @@ tone-particles/
 └── .github/workflows/       # GitHub Actions（不随包分发）
 ```
 
-**分发包只有 36 个文件**：README、SKILL.md、`config/` 4 个、`references/` 4 个、`scripts/` 5 个、`styles/` 21 个。`eval/`、`integrations/`、`mcp/`、`tools/`、`tests/`、`Docs/` 都不进包。
+**分发包只有 37 个文件**：README、SKILL.md、`config/` 4 个、`references/` 4 个、`scripts/` 5 个、`styles/` 21 个、`assets/` 1 个徽章图。`eval/`、`integrations/`、`mcp/`、`tools/`、`tests/`、`Docs/` 都不进包。
 
 用户配置 `config/user-config.json` 在首次导入后生成；随机模式还会生成 `config/tone-history.json`，记录最近使用的风格，避免连续重复。两者都不随包分发。分发 zip 只挂在 Releases 页，不进仓库（由 `tools/package.py` 构建）。
 
@@ -400,7 +405,7 @@ python3 tools/package.py --check    # 只校验版本串一致性
 python3 tools/package.py --verify   # 供应链校验，18 项
 ```
 
-打包是白名单构建：只含 README、SKILL.md、`config/`、`references/`、`scripts/`、`styles/`，顶层固定 `tone-particles/`，条目排序与固定时间戳保证同样内容产出字节一致的包。
+打包是白名单构建：只含 README、SKILL.md、`config/`、`references/`、`scripts/`、`styles/`、`assets/`，顶层固定 `tone-particles/`，条目排序与固定时间戳保证同样内容产出字节一致的包。
 
 `--verify` 检查：连续两次构建的 SHA-256 是否一致、zip 条目有没有路径穿越 / 绝对路径 / 重复条目、必需文件是否齐全、私有与开发文件（用户配置、历史、锁文件、`eval/`、`tests/`、`tools/`、`dist/`）有没有漏进包里、包内有没有机器路径或密钥形态的内容，以及**解压到临时目录后跑一遍最小使用流程**。通过后会在 `dist/` 里写出内容清单（`tone-particles-<版本>.manifest.json`）与 SHA-256 校验和文件。
 
@@ -447,9 +452,8 @@ python3 tools/package.py --verify   # 供应链校验，18 项
 | [`Docs/配置升级与故障诊断.md`](Docs/配置升级与故障诊断.md) | 配置版本与迁移、写入语义、故障诊断、不联网的修复流程 |
 | [`Docs/发布检查清单.md`](Docs/发布检查清单.md) | 发版前的逐项检查表与回滚步骤 |
 | [`Docs/双平台推送流程.md`](Docs/双平台推送流程.md) | GitHub + CNB 双平台推送 SOP、账号隔离模型、SHA 对照 |
-| [`Docs/升级执行报告.md`](Docs/升级执行报告.md) | 0.4.0 升级的完整执行报告：基线、逐项改动、测试结果、遗留风险 |
 | [`eval/README.md`](eval/README.md) | 评测体系：四种状态、四层指标、后端、判分口径 |
-| [`Docs/语气助词 Skill PRD 与部署方案.md`](Docs/语气助词%20Skill%20PRD%20与部署方案.md) | 原始 PRD（历史快照，部分章节已过时） |
+| [`Docs/语气助词 Skill PRD 与部署方案.md`](Docs/语气助词%20Skill%20PRD%20与部署方案.md) | 设计依据：验收指标、评测通过线与风格向量初值的原始出处（实现细节章节已过时） |
 
 ## 版本
 
@@ -461,4 +465,4 @@ python3 tools/package.py --verify   # 供应链校验，18 项
 - `0.2.0`：抽出共享核心 `scripts/_core.py`；新增评测体系（`eval/`）、宿主适配层（`integrations/`）与 MCP 服务（`mcp/`）。
 - `0.1.0`：21 风格、四种模式、导入向导、融合 / 随机、场景自适应、颜文字、三个脚本。
 
-逐项改动与测试结果见 [`Docs/升级执行报告.md`](Docs/升级执行报告.md)。
+每个版本的逐项改动见本节的版本条目；评测通过线的原始出处见 [`Docs/语气助词 Skill PRD 与部署方案.md`](Docs/语气助词%20Skill%20PRD%20与部署方案.md)。

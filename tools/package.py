@@ -44,6 +44,7 @@ WHITELIST = [
     ("references/*.md", True),
     ("scripts/*.py", True),
     ("styles/*.md", True),
+    ("assets/*.svg", False),
 ]
 # 固定时间戳让 zip 可复现（1980-01-01 是 zip 格式的纪元）
 FIXED_DATE = (1980, 1, 1, 0, 0, 0)

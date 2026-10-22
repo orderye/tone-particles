@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="164" height="20" viewBox="0 0 164 20" role="img" aria-label="powered by KimiCode">
+  <title>powered by KimiCode</title>
+  <defs>
+    <linearGradient id="kimiLabel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#5c5c5c"/>
+      <stop offset="1" stop-color="#424242"/>
+    </linearGradient>
+    <linearGradient id="kimiValue" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4FA3FF"/>
+      <stop offset="1" stop-color="#1F7BFF"/>
+    </linearGradient>
+    <linearGradient id="kimiBlob" x1="0.25" y1="0" x2="0.6" y2="1">
+      <stop offset="0" stop-color="#A8D2FF"/>
+      <stop offset="1" stop-color="#5AA6FF"/>
+    </linearGradient>
+  </defs>
+
+  <path d="M3 0H100V20H3a3 3 0 0 1-3-3V3a3 3 0 0 1 3-3z" fill="url(#kimiLabel)"/>
+  <path d="M100 0h61a3 3 0 0 1 3 3v14a3 3 0 0 1-3 3h-61z" fill="url(#kimiValue)"/>
+
+  <g transform="translate(4 -1.7) scale(0.0273)">
+    <path d="M245 600C205 490 230 340 320 280C365 250 430 242 480 248C565 258 655 295 700 345C742 392 750 470 730 525C720 550 710 570 700 600Z" fill="url(#kimiBlob)"/>
+    <path d="M709 330V296A50 50 0 0 1 759 246H768A24 24 0 0 1 792 270V296A34 34 0 0 1 758 330Z" fill="#A8D2FF"/>
+    <g fill="#FFFFFF">
+      <rect x="454" y="362" width="68" height="122" rx="34" transform="rotate(4 488 423)"/>
+      <rect x="585" y="350" width="66" height="120" rx="33" transform="rotate(-4 618 410)"/>
+    </g>
+  </g>
+
+  <text x="30" y="14" font-family="Verdana,DejaVu Sans,Geneva,sans-serif" font-size="11" fill="#ffffff">powered by</text>
+  <text x="106" y="14" font-family="Verdana,DejaVu Sans,Geneva,sans-serif" font-size="11" fill="#ffffff">KimiCode</text>
+</svg>
